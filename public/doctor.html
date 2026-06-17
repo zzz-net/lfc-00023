@@ -80,6 +80,10 @@
     if (!currentUser || currentUser.role !== 'doctor') window.location.href = 'login.html';
     document.getElementById('userInfo').textContent = `${currentUser.name} (医生)`;
 
+    function escapeJs(str) {
+      return (str || '').toString().replace(/'/g, "\\'").replace(/"/g, '\\"');
+    }
+
     function showAlert(message, type = 'success') {
       document.getElementById('alert').innerHTML = `<div class="alert alert-${type}">${message}</div>`;
       setTimeout(() => document.getElementById('alert').innerHTML = '', 3000);
@@ -101,7 +105,7 @@
           <div class="patient-name-big">${consulting.patient_name}</div>
           <p>性别：${consulting.gender || '-'} | 年龄：${consulting.age || '-'}岁 | ${typeMap[consulting.type]}</p>
           <p style="color: #999;">接诊开始时间：${consulting.consultation_started_at}</p>
-          <button class="btn btn-success" onclick="openConsultModal(${consulting.id}, '${consulting.patient_name}', ${consulting.queue_number})" style="margin-top: 15px;">
+          <button class="btn btn-success" onclick="openConsultModal(${consulting.id}, '${escapeJs(consulting.patient_name)}', ${consulting.queue_number})" style="margin-top: 15px;">
             填写记录并完成接诊
           </button>
         `;
@@ -146,7 +150,7 @@
           <td>
             ${q.status === 'called' ? `<button class="btn btn-sm btn-primary" onclick="startConsult(${q.id})">接诊</button>` : ''}
             ${q.status === 'consulting' && q.consulting_doctor_id === currentUser.id ? 
-              `<button class="btn btn-sm btn-success" onclick="openConsultModal(${q.id}, '${q.patient_name}', ${q.queue_number})">完成</button>` : ''}
+              `<button class="btn btn-sm btn-success" onclick="openConsultModal(${q.id}, '${escapeJs(q.patient_name)}', ${q.queue_number})">完成</button>` : ''}
           </td>
         </tr>
       `).join('');

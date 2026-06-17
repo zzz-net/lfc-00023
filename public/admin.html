@@ -243,6 +243,11 @@
       setTimeout(() => document.getElementById('alert').innerHTML = '', 3000);
     }
 
+    function escapeHtml(str) {
+      const s = (str == null ? '' : str).toString();
+      return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
     async function logout() {
       await api.logout();
       clearToken();
@@ -434,7 +439,7 @@
           <td>${l.created_at}</td>
           <td>${l.user_name || '-'}</td>
           <td>${actionMap[l.action] || l.action}</td>
-          <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">${JSON.stringify(l.details)}</td>
+          <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(JSON.stringify(l.details))}</td>
           <td>${l.ip_address || '-'}</td>
         </tr>
       `).join('');

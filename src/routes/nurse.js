@@ -6,10 +6,23 @@ const { checkCanRegister, getNextQueueNumber, getTodayQueueCount } = require('..
 const router = express.Router();
 
 router.post('/patients', (req, res) => {
-  const { name, id_card, phone, gender, age } = req.body;
+  let { name, id_card, phone, gender, age } = req.body;
   
   if (!name || !id_card) {
     return res.status(400).json({ error: '姓名和身份证号不能为空' });
+  }
+
+  const normalizeGender = (g) => {
+    if (g == null || g === '') return null;
+    const s = String(g).trim().toLowerCase().replace(/\uFEFF/g, '').replace(/\s/g, '');
+    if (s === '男' || ['male', 'm', '1', '男性', 'boy', 'man', '男生', '男士', '爷', '哥'].includes(s)) return '男';
+    if (s === '女' || ['female', 'f', '0', '女性', 'girl', 'woman', '女生', '女士', '妹', '姐'].includes(s)) return '女';
+    return '__INVALID__';
+  };
+
+  gender = normalizeGender(gender);
+  if (gender === '__INVALID__') {
+    return res.status(400).json({ error: '性别值不合法，请使用"男"或"女"，或常见等价表示' });
   }
 
   try {
@@ -20,7 +33,7 @@ router.post('/patients', (req, res) => {
         INSERT INTO patients (name, id_card, phone, gender, age)
         VALUES (?, ?, ?, ?, ?)
       `);
-      const result = stmt.run(name, id_card, phone, gender, age);
+      const result = stmt.run(name, id_card, phone || null, gender, age || null);
       patient = { id: result.lastInsertRowid, name, id_card, phone, gender, age };
       
       logAudit(req.user.id, 'create_patient', 'patient', patient.id, 
