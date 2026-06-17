@@ -445,25 +445,25 @@ function revokeBatch(batchId, userId, ipAddress, reason) {
     return { success: false, error: '该批次已撤销' };
   }
 
-  const calledRecords = db.prepare(`
+  const nonWaitingRecords = db.prepare(`
     SELECT COUNT(*) as count FROM queue_records
-    WHERE batch_id = ? AND status IN ('called', 'consulting', 'completed')
+    WHERE batch_id = ? AND status != 'waiting'
   `).get(batchId);
 
-  if (calledRecords.count > 0) {
-    return { success: false, error: '该批次中存在已叫号或已就诊的记录，无法撤销' };
+  if (nonWaitingRecords.count > 0) {
+    return { success: false, error: '该批次中存在已叫号、过号或已就诊的记录，无法撤销' };
   }
 
   const revokeTransaction = db.transaction(() => {
     const queueRecords = db.prepare(`
       SELECT id, queue_number, patient_id, department_id, queue_date
-      FROM queue_records WHERE batch_id = ?
+      FROM queue_records WHERE batch_id = ? AND status = 'waiting'
     `).all(batchId);
 
     db.prepare(`
       UPDATE queue_records 
       SET status = 'returned', return_reason = ?, returned_by = ?, returned_at = ?
-      WHERE batch_id = ?
+      WHERE batch_id = ? AND status = 'waiting'
     `).run(reason || '批量撤销', userId, new Date().toISOString(), batchId);
 
     for (const qr of queueRecords) {

@@ -309,7 +309,7 @@ node scripts/test-batch-after-restart.js # 6. 重启后一致性测试（14项�
 - 审计日志完整性
 - CSV格式验证（缺少列、日期/类型错误）
 
-`scripts/test-batch-after-restart.js` 在重启后运行，覆盖14项断言，包含：
+`scripts/test-batch-after-restart.js` 在重启后运行，覆盖32项断言，包含：
 - 批次状态持久化
 - 撤销状态和原因持久化
 - 队列状态与撤销记录一致

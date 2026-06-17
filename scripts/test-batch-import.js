@@ -256,7 +256,7 @@ ${manyPatients.join('\n')}`;
   assert(revokedRecords.every(q => q.return_reason === '测试撤销'), '退回原因为"测试撤销"');
   console.log('');
 
-  console.log('15. 测试撤销批次 - 已叫号的批次无法撤销');
+  console.log('15. 测试撤销批次 - 已叫号的批次无法撤销，且数据不被污染');
   const validCSV2 = `id_card,name,department,queue_date,type
 110101199001012201,撤销测试1,内科,${today},预约`;
   const result2 = await request('/nurse/batch/import', {
@@ -266,14 +266,21 @@ ${manyPatients.join('\n')}`;
   });
   const batchId2 = result2.batch_id;
 
-  const batchDetail2 = await request(`/nurse/batches/${batchId2}`, { headers: nurseHeaders });
-  const queueRecordId = batchDetail2.records[0].queue_record_id;
+  const batchDetail2Before = await request(`/nurse/batches/${batchId2}`, { headers: nurseHeaders });
+  assert(batchDetail2Before.status === 'completed', '导入后批次状态为completed');
+  const queueRecordId = batchDetail2Before.records[0].queue_record_id;
 
   await request(`/nurse/queue/call/${queueRecordId}`, {
     method: 'POST',
     headers: nurseHeaders
   });
 
+  const queueBefore = await request(`/nurse/queue/1`, { headers: nurseHeaders });
+  const qrBefore = queueBefore.find(q => q.id === queueRecordId);
+  assert(qrBefore.status === 'called', '叫号后状态为called');
+  assert(!qrBefore.return_reason, '叫号后无退回原因');
+
+  let revokeFailed = false;
   try {
     await request(`/nurse/batches/${batchId2}/revoke`, {
       method: 'POST',
@@ -281,12 +288,85 @@ ${manyPatients.join('\n')}`;
       body: JSON.stringify({ reason: '尝试撤销已叫号批次' })
     });
   } catch (e) {
+    revokeFailed = true;
+    assert(e.status === 400, '返回400状态码');
     assert(e.data.success === false, '已叫号批次撤销失败');
-    assert(e.data.error.includes('已叫号'), '错误信息包含"已叫号"');
+    assert(e.data.error.includes('已叫号') || e.data.error.includes('过号'), '错误信息提及已叫号或过号');
   }
+  assert(revokeFailed, '撤销请求必须失败');
+
+  const batchDetail2After = await request(`/nurse/batches/${batchId2}`, { headers: nurseHeaders });
+  assert(batchDetail2After.status === 'completed', '撤销失败后批次状态仍为completed，未被改坏');
+  assert(!batchDetail2After.revoked_at, '撤销失败后批次无revoked_at');
+  assert(!batchDetail2After.revoke_reason, '撤销失败后批次无revoke_reason');
+
+  const queueAfter = await request(`/nurse/queue/1`, { headers: nurseHeaders });
+  const qrAfter = queueAfter.find(q => q.id === queueRecordId);
+  assert(qrAfter.status === 'called', '撤销失败后队列状态仍为called，未被改坏');
+  assert(!qrAfter.return_reason, '撤销失败后退回原因未被污染');
+  assert(!qrAfter.returned_by, '撤销失败后退回人未被污染');
+
+  const auditAfter = await request('/public/audit-logs?action=revoke_batch', { headers: nurseHeaders });
+  const revokeAudits = auditAfter.logs.filter(l => l.target_id === batchId2);
+  assert(revokeAudits.length === 0, '撤销失败后未产生revoke_batch审计事件');
   console.log('');
 
-  console.log('16. 测试权限控制 - 医生无法调用批量导入');
+  console.log('16. 测试撤销批次 - 过号(missed)的批次无法撤销，且数据不被污染');
+  const validCSV3 = `id_card,name,department,queue_date,type
+110101199001012210,撤销测试过号,内科,${today},预约`;
+  const result3 = await request('/nurse/batch/import', {
+    method: 'POST',
+    headers: nurseHeaders,
+    body: JSON.stringify({ csv_text: validCSV3 })
+  });
+  const batchId3 = result3.batch_id;
+
+  const batchDetail3Before = await request(`/nurse/batches/${batchId3}`, { headers: nurseHeaders });
+  const queueRecordId3 = batchDetail3Before.records[0].queue_record_id;
+
+  await request(`/nurse/queue/call/${queueRecordId3}`, {
+    method: 'POST',
+    headers: nurseHeaders
+  });
+  await request(`/nurse/queue/miss/${queueRecordId3}`, {
+    method: 'POST',
+    headers: nurseHeaders
+  });
+
+  const queue3Before = await request(`/nurse/queue/1`, { headers: nurseHeaders });
+  const qr3Before = queue3Before.find(q => q.id === queueRecordId3);
+  assert(qr3Before.status === 'missed', '过号后状态为missed');
+
+  let revokeFailed3 = false;
+  try {
+    await request(`/nurse/batches/${batchId3}/revoke`, {
+      method: 'POST',
+      headers: nurseHeaders,
+      body: JSON.stringify({ reason: '尝试撤销过号批次' })
+    });
+  } catch (e) {
+    revokeFailed3 = true;
+    assert(e.status === 400, '返回400状态码');
+    assert(e.data.success === false, '过号批次撤销失败');
+    assert(e.data.error.includes('已叫号') || e.data.error.includes('过号'), '错误信息提及已叫号或过号');
+  }
+  assert(revokeFailed3, '过号批次撤销请求必须失败');
+
+  const batchDetail3After = await request(`/nurse/batches/${batchId3}`, { headers: nurseHeaders });
+  assert(batchDetail3After.status === 'completed', '撤销失败后批次状态仍为completed');
+  assert(!batchDetail3After.revoked_at, '撤销失败后批次无revoked_at');
+
+  const queue3After = await request(`/nurse/queue/1`, { headers: nurseHeaders });
+  const qr3After = queue3After.find(q => q.id === queueRecordId3);
+  assert(qr3After.status === 'missed', '撤销失败后队列状态仍为missed，未被污染为returned');
+  assert(!qr3After.return_reason, '撤销失败后退回原因未被写入');
+
+  const audit3After = await request('/public/audit-logs?action=return_queue', { headers: nurseHeaders });
+  const returnAudits = audit3After.logs.filter(l => l.target_id === queueRecordId3);
+  assert(returnAudits.length === 0, '撤销失败后未产生return_queue审计事件');
+  console.log('');
+
+  console.log('17. 测试权限控制 - 医生无法调用批量导入');
   try {
     await request('/nurse/batch/import', {
       method: 'POST',
@@ -308,7 +388,7 @@ ${manyPatients.join('\n')}`;
   }
   console.log('');
 
-  console.log('17. 测试权限控制 - 管理员可以调用批量导入');
+  console.log('18. 测试权限控制 - 管理员可以调用批量导入');
   const adminCSV = `id_card,name,department,queue_date,type
 110101199001012301,管理员导入,内科,${today},预约`;
   const adminResult = await request('/admin/batch/import', {
@@ -319,7 +399,7 @@ ${manyPatients.join('\n')}`;
   assert(adminResult.success === true, '管理员导入成功');
   console.log('');
 
-  console.log('18. 测试审计日志 - 导入和撤销操作有审计记录');
+  console.log('19. 测试审计日志 - 导入和撤销操作有审计记录');
   const auditLogs = await request('/public/audit-logs?action=import_batch', { headers: nurseHeaders });
   assert(auditLogs.logs.length >= 1, '至少1条import_batch审计记录');
   
@@ -327,7 +407,7 @@ ${manyPatients.join('\n')}`;
   assert(revokeLogs.logs.length >= 1, '至少1条revoke_batch审计记录');
   console.log('');
 
-  console.log('19. 测试CSV格式验证 - 缺少必填列');
+  console.log('20. 测试CSV格式验证 - 缺少必填列');
   const missingColCSV = `id_card,name,department,queue_date
 110101199001012401,测试,内科,${today}`;
   try {
@@ -342,7 +422,7 @@ ${manyPatients.join('\n')}`;
   }
   console.log('');
 
-  console.log('20. 测试CSV格式验证 - 日期格式错误');
+  console.log('21. 测试CSV格式验证 - 日期格式错误');
   const badDateCSV = `id_card,name,department,queue_date,type
 110101199001012402,测试,内科,2026/06/18,预约`;
   const badDateResult = await request('/nurse/batch/import', {
@@ -355,7 +435,7 @@ ${manyPatients.join('\n')}`;
   assert(badDateResult.details.failed[0].errors.some(err => err.code === 'INVALID_DATE'), '错误代码为INVALID_DATE');
   console.log('');
 
-  console.log('21. 测试CSV格式验证 - 挂号类型错误');
+  console.log('22. 测试CSV格式验证 - 挂号类型错误');
   const badTypeCSV = `id_card,name,department,queue_date,type
 110101199001012403,测试,内科,${today},错误类型`;
   const badTypeResult = await request('/nurse/batch/import', {
@@ -368,13 +448,13 @@ ${manyPatients.join('\n')}`;
   assert(badTypeResult.details.failed[0].errors.some(err => err.code === 'INVALID_TYPE'), '错误代码为INVALID_TYPE');
   console.log('');
 
-  console.log('22. 测试批次查询分页功能');
+  console.log('23. 测试批次查询分页功能');
   const pagedBatches = await request('/nurse/batches?page=1&pageSize=2', { headers: nurseHeaders });
   assert(pagedBatches.pagination.pageSize === 2, '每页2条');
   assert(pagedBatches.batches.length <= 2, '返回不超过2条');
   console.log('');
 
-  console.log('23. 测试批次详情包含完整信息');
+  console.log('24. 测试批次详情包含完整信息');
   const firstBatch = pagedBatches.batches[0];
   const detail = await request(`/nurse/batches/${firstBatch.id}`, { headers: nurseHeaders });
   assert(detail.imported_by_name, '显示导入人姓名');
@@ -383,7 +463,7 @@ ${manyPatients.join('\n')}`;
   assert(detail.records[0].status !== undefined, '记录包含状态');
   console.log('');
 
-  console.log('24. 测试停诊时段导入冲突');
+  console.log('25. 测试停诊时段导入冲突');
   await request('/admin/closed-periods', {
     method: 'POST',
     headers: adminHeaders,
@@ -402,7 +482,7 @@ ${manyPatients.join('\n')}`;
   assert(closedResult.details.failed[0].errors.some(err => err.code === 'DEPARTMENT_CLOSED'), '错误代码为DEPARTMENT_CLOSED');
   console.log('');
 
-  console.log('25. 测试未配置号源的科室导入冲突');
+  console.log('26. 测试未配置号源的科室导入冲突');
   const dayAfterTomorrow = new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0];
   const noSlotCSV = `id_card,name,department,queue_date,type
 110101199001012502,无号源测试,儿科,${dayAfterTomorrow},预约`;
