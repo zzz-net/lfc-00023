@@ -310,11 +310,11 @@ async function main() {
 
   const batch6 = await request(`/nurse/batches/${pre6.batch_id}`, { headers: nurse1H });
   const enqueued = batch6.records.filter(r => r.status === 'enqueued');
-  const failedRecs = batch6.records.filter(r => r.status === 'failed');
+  const precheckFailed = batch6.records.filter(r => r.status === 'precheck_failed');
   assert(enqueued.length === 2, '6 有 2 条"已入队"记录');
-  assert(failedRecs.length === 1, '6 有 1 条"预检失败"记录');
+  assert(precheckFailed.length === 1, '6 有 1 条"预检失败"记录');
   assert(enqueued[0].queue_record_id != null, '6 已入队记录有 queue_record_id');
-  assert(failedRecs[0].queue_record_id == null, '6 失败记录无 queue_record_id');
+  assert(precheckFailed[0].queue_record_id == null, '6 预检失败记录无 queue_record_id');
 
   console.log('用例6 通过 ✅ 确认后正确区分"预检失败"和"已入队"\n');
 
@@ -335,7 +335,7 @@ async function main() {
 
   const batch7 = await request(`/nurse/batches/${pre7.batch_id}`, { headers: nurse1H });
   assert(batch7.status === 'revoked', '7 批次状态为 revoked');
-  assert(batch7.records[0].status === 'failed', '7 记录状态为 failed');
+  assert(batch7.records[0].status === 'precheck_failed', '7 记录状态为 precheck_failed');
   assert(batch7.records[0].error_code === 'BATCH_REVOKED', '7 错误代码 BATCH_REVOKED');
 
   const audit7 = await request(`/public/audit-logs?resource_type=import_batch&resource_id=${pre7.batch_id}`, { headers: adminH });

@@ -608,16 +608,69 @@
     async function confirmBatchImportAdmin() {
       if (!currentPrecheckBatchIdAdmin) return;
       
-      if (!confirm('确认导入？确认后将生成正式批次并写入排队记录。')) return;
+      if (!confirm('确认导入？确认后将生成正式批次并写入排队记录。确认时会再次校验号源和数据，如有冲突将一并展示。')) return;
 
       try {
         const result = await api.admin.batchConfirm(currentPrecheckBatchIdAdmin);
-        showAlert(`导入完成：成功${result.success_count}条，失败${result.fail_count}条`);
+        let msg = `导入完成：成功${result.success_count}条`;
+        if (result.precheck_failed_count > 0) msg += `，预检失败${result.precheck_failed_count}条`;
+        if (result.confirm_failed_count > 0) msg += `，确认时新冲突失败${result.confirm_failed_count}条`;
+        showAlert(msg);
+        
+        if (result.recheck_details && (result.recheck_details.precheck_failed.length > 0 || result.recheck_details.new_conflicts.length > 0)) {
+          renderConfirmRecheckResultAdmin(result);
+        }
+        
         document.getElementById('confirmImportSectionAdmin').style.display = 'none';
         currentPrecheckBatchIdAdmin = null;
         loadBatchesAdmin();
       } catch (e) {
         showAlert(e.message, 'error');
+      }
+    }
+
+    function renderConfirmRecheckResultAdmin(result) {
+      let html = '';
+      const rd = result.recheck_details;
+      
+      if (rd.new_conflicts && rd.new_conflicts.length > 0) {
+        html += `<h3 style="margin-top: 20px; color: #d9534f;">预检后新增冲突（${rd.new_conflicts.length}条）</h3>
+        <table style="width: 100%; margin-top: 10px; border: 1px solid #f5c6cb;">
+          <thead style="background: #f8d7da;"><tr><th>行号</th><th>身份证号</th><th>姓名</th><th>科室</th><th>日期</th><th>类型</th><th>冲突原因</th></tr></thead>
+          <tbody>`;
+        rd.new_conflicts.forEach(f => {
+          html += `<tr>
+            <td>${f.row}</td>
+            <td>${f.id_card}</td>
+            <td>${f.name}</td>
+            <td>${f.department || '-'}</td>
+            <td>${f.queue_date || '-'}</td>
+            <td>${f.type === 'walkin' ? '现场' : '预约'}</td>
+            <td class="text-red">${f.error_message}</td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+      }
+
+      if (rd.precheck_failed && rd.precheck_failed.length > 0) {
+        html += `<h3 style="margin-top: 20px; color: #f0ad4e;">预检未通过（${rd.precheck_failed.length}条）</h3>
+        <table style="width: 100%; margin-top: 10px; border: 1px solid #ffeeba;">
+          <thead style="background: #fff3cd;"><tr><th>行号</th><th>身份证号</th><th>姓名</th><th>错误原因</th></tr></thead>
+          <tbody>`;
+        rd.precheck_failed.forEach(f => {
+          html += `<tr>
+            <td>${f.row}</td>
+            <td>${f.id_card}</td>
+            <td>${f.name}</td>
+            <td class="text-red">${f.error_message}</td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+      }
+
+      if (html) {
+        const div = document.getElementById('importResultContentAdmin');
+        div.innerHTML += html;
       }
     }
 
@@ -697,14 +750,20 @@
         failed: 'status-missed', revoked: 'status-returned'
       };
 
-      document.querySelector('#batchTableAdmin tbody').innerHTML = data.batches.map(b => `
+      document.querySelector('#batchTableAdmin tbody').innerHTML = data.batches.map(b => {
+        const precheckFailed = b.precheck_failed_count || 0;
+        const confirmFailed = b.confirm_failed_count || 0;
+        const failDisplay = b.status === 'completed' && (precheckFailed > 0 || confirmFailed > 0)
+          ? `${b.success_count}成功 / ${precheckFailed}预检失败 / ${confirmFailed}确认失败`
+          : b.fail_count;
+        return `
         <tr>
           <td><a href="#" onclick="viewBatchDetailAdmin(${b.id}); return false;">${b.batch_no}</a></td>
           <td>${b.imported_at}</td>
           <td>${b.imported_by_name}</td>
           <td>${b.total_count}</td>
           <td>${b.success_count}</td>
-          <td>${b.fail_count}</td>
+          <td>${failDisplay}</td>
           <td><span class="status-badge ${statusClass[b.status]}">${statusMap[b.status]}</span></td>
           <td>
             ${b.status === 'draft' ? 
@@ -715,7 +774,7 @@
               `<button class="btn btn-sm btn-danger" onclick="revokeBatchDirectAdmin(${b.id})">撤销</button>` : ''}
           </td>
         </tr>
-      `).join('');
+      `}).join('');
     }
 
     async function confirmBatchImportDirectAdmin(batchId) {
@@ -749,7 +808,9 @@
       
       const importStatusMap = { 
         draft_success: '预检通过', 
-        draft_failed: '预检失败', 
+        draft_failed: '预检失败',
+        precheck_failed: '预检失败',
+        confirm_failed: '确认失败',
         pending: '待处理', 
         success: '成功', 
         failed: '失败',
@@ -763,6 +824,8 @@
       const importStatusClass = { 
         draft_success: 'status-consulting',
         draft_failed: 'status-missed',
+        precheck_failed: 'status-missed',
+        confirm_failed: 'status-returned',
         success: 'status-consulting', 
         failed: 'status-missed', 
         pending: 'status-waiting',

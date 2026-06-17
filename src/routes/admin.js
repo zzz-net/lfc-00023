@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { logAudit } = require('../utils/audit');
-const { processBatchImport, precheckBatch, confirmBatch, revokeBatch, generateBatchCSV } = require('../utils/batchImport');
+const { precheckBatch, confirmBatch, revokeBatch, generateBatchCSV } = require('../utils/batchImport');
 
 const router = express.Router();
 
@@ -298,28 +298,6 @@ router.post('/batch/confirm', (req, res) => {
   }
   
   res.json(result);
-});
-
-router.post('/batch/import', (req, res) => {
-  const { csv_text } = req.body;
-  
-  if (!csv_text) {
-    return res.status(400).json({ error: 'CSV内容不能为空' });
-  }
-
-  const precheckResult = precheckBatch(csv_text, req.user.id, req.ip);
-  
-  if (!precheckResult.success) {
-    return res.status(400).json(precheckResult);
-  }
-
-  const confirmResult = confirmBatch(precheckResult.batch_id, req.user.id, req.ip);
-  
-  if (!confirmResult.success) {
-    return res.status(400).json(confirmResult);
-  }
-  
-  res.json(confirmResult);
 });
 
 router.get('/batches', (req, res) => {

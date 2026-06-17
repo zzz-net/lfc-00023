@@ -68,7 +68,6 @@ const api = {
     createUser: (data) => request('/admin/users', { method: 'POST', body: JSON.stringify(data) }),
     batchPrecheck: (csvText) => request('/admin/batch/precheck', { method: 'POST', body: JSON.stringify({ csv_text: csvText }) }),
     batchConfirm: (batchId) => request('/admin/batch/confirm', { method: 'POST', body: JSON.stringify({ batch_id: batchId }) }),
-    batchImport: (csvText) => request('/admin/batch/import', { method: 'POST', body: JSON.stringify({ csv_text: csvText }) }),
     getBatches: (params = {}) => {
       const qs = new URLSearchParams(params).toString();
       return request(`/admin/batches${qs ? `?${qs}` : ''}`);
@@ -96,7 +95,6 @@ const api = {
     getQueueStats: (deptId, date) => request(`/nurse/queue/stats/${deptId}${date ? `?date=${date}` : ''}`),
     batchPrecheck: (csvText) => request('/nurse/batch/precheck', { method: 'POST', body: JSON.stringify({ csv_text: csvText }) }),
     batchConfirm: (batchId) => request('/nurse/batch/confirm', { method: 'POST', body: JSON.stringify({ batch_id: batchId }) }),
-    batchImport: (csvText) => request('/nurse/batch/import', { method: 'POST', body: JSON.stringify({ csv_text: csvText }) }),
     getBatches: (params = {}) => {
       const qs = new URLSearchParams(params).toString();
       return request(`/nurse/batches${qs ? `?${qs}` : ''}`);

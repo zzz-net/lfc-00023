@@ -118,6 +118,8 @@ CREATE TABLE IF NOT EXISTS import_batches (
   total_count INTEGER NOT NULL DEFAULT 0,
   success_count INTEGER NOT NULL DEFAULT 0,
   fail_count INTEGER NOT NULL DEFAULT 0,
+  precheck_failed_count INTEGER NOT NULL DEFAULT 0,
+  confirm_failed_count INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('draft', 'pending', 'processing', 'completed', 'failed', 'revoked')),
   imported_by INTEGER NOT NULL,
   imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -144,7 +146,7 @@ CREATE TABLE IF NOT EXISTS import_records (
   department_name TEXT,
   queue_date TEXT NOT NULL,
   type TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('draft_success', 'draft_failed', 'pending', 'success', 'failed', 'enqueued')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('draft_success', 'draft_failed', 'precheck_failed', 'confirm_failed', 'pending', 'success', 'failed', 'enqueued')),
   error_code TEXT,
   error_message TEXT,
   is_overwrite INTEGER DEFAULT 0,
@@ -193,6 +195,15 @@ if (!recordColumns.includes('is_overwrite')) {
   db.exec(`
     ALTER TABLE import_records ADD COLUMN is_overwrite INTEGER DEFAULT 0;
     ALTER TABLE import_records ADD COLUMN overwrite_hint TEXT;
+  `);
+}
+
+const batchPragma2 = db.prepare("PRAGMA table_info(import_batches)").all();
+const batchColumns2 = batchPragma2.map(c => c.name);
+if (!batchColumns2.includes('precheck_failed_count')) {
+  db.exec(`
+    ALTER TABLE import_batches ADD COLUMN precheck_failed_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE import_batches ADD COLUMN confirm_failed_count INTEGER NOT NULL DEFAULT 0;
   `);
 }
 
