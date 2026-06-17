@@ -20,6 +20,8 @@
       <div class="tab" data-tab="slots">号源配置</div>
       <div class="tab" data-tab="closed">停诊时段</div>
       <div class="tab" data-tab="users">用户管理</div>
+      <div class="tab" data-tab="batch">批量导入</div>
+      <div class="tab" data-tab="batches">导入批次</div>
       <div class="tab" data-tab="audit">审计日志</div>
       <div class="tab" data-tab="reports">日报导出</div>
     </div>
@@ -225,18 +227,127 @@
         </div>
       </div>
     </div>
+
+    <div id="batch" class="tab-content">
+      <div class="card">
+        <h2>批量导入预约/登记</h2>
+        <div class="form-row">
+          <div class="form-group" style="flex: 1;">
+            <label>CSV模板说明</label>
+            <div style="background: #f5f5f5; padding: 10px; border-radius: 4px; font-size: 12px;">
+              必填列：id_card, name, department, queue_date, type<br>
+              可选列：phone, gender, age<br>
+              type可选值：预约/appointment、现场/walkin<br>
+              department可填科室名称或代码（如：内科、NK）<br>
+              date格式：YYYY-MM-DD
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex: 1;">
+            <label>上传CSV文件</label>
+            <input type="file" id="csvFileAdmin" accept=".csv" onchange="handleFileSelectAdmin(event)" style="padding: 8px;">
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-default" onclick="downloadTemplateAdmin()">下载模板</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex: 1;">
+            <label>或直接粘贴CSV内容</label>
+            <textarea id="csvTextAdmin" rows="10" style="width: 100%; font-family: monospace;" placeholder="id_card,name,department,queue_date,type,phone,gender,age&#10;110101199001011234,张三,内科,2026-06-18,预约,13800138000,男,30"></textarea>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="submitBatchImportAdmin()">开始导入</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="importResultAdmin" class="card" style="display: none;">
+        <h2>导入结果</h2>
+        <div id="importResultContentAdmin"></div>
+      </div>
+    </div>
+
+    <div id="batches" class="tab-content">
+      <div class="card">
+        <h2>导入批次查询</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>日期</label>
+            <input type="date" id="batchDateAdmin">
+          </div>
+          <div class="form-group">
+            <label>科室</label>
+            <select id="batchDeptAdmin">
+              <option value="">全部</option>
+            </select>
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="loadBatchesAdmin()">查询</button>
+          </div>
+        </div>
+        <table id="batchTableAdmin">
+          <thead>
+            <tr>
+              <th>批次号</th><th>导入时间</th><th>导入人</th>
+              <th>总数</th><th>成功</th><th>失败</th><th>状态</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div id="batchDetailAdmin" class="card" style="display: none;">
+        <div class="form-row" style="justify-content: space-between;">
+          <h2 id="batchDetailTitleAdmin">批次详情</h2>
+          <div>
+            <button class="btn btn-success" onclick="exportCurrentBatchAdmin()">导出CSV</button>
+            <button class="btn btn-danger" onclick="showRevokeModalAdmin()">撤销批次</button>
+            <button class="btn btn-default" onclick="closeBatchDetailAdmin()">关闭</button>
+          </div>
+        </div>
+        <table id="batchDetailTableAdmin">
+          <thead>
+            <tr>
+              <th>行号</th><th>身份证号</th><th>姓名</th><th>科室</th>
+              <th>日期</th><th>类型</th><th>状态</th><th>错误信息</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="revokeModalAdmin" class="modal">
+    <div class="modal-content">
+      <h3>撤销批次</h3>
+      <div class="form-group">
+        <label>撤销原因</label>
+        <textarea id="revokeReasonAdmin" rows="3" style="width: 100%;" placeholder="请输入撤销原因"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeRevokeModalAdmin()">取消</button>
+        <button class="btn btn-danger" onclick="confirmRevokeBatchAdmin()">确认撤销</button>
+      </div>
+    </div>
   </div>
 
   <div id="alert"></div>
   <script src="/js/api.js"></script>
   <script>
     let currentUser = getUser();
+    let currentBatchIdAdmin = null;
     if (!currentUser || currentUser.role !== 'admin') window.location.href = 'login.html';
     document.getElementById('userInfo').textContent = `${currentUser.name} (管理员)`;
     document.getElementById('slotDate').value = new Date().toISOString().split('T')[0];
     document.getElementById('closedStart').value = new Date().toISOString().split('T')[0];
     document.getElementById('closedEnd').value = new Date().toISOString().split('T')[0];
     document.getElementById('reportDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('batchDateAdmin').value = new Date().toISOString().split('T')[0];
 
     function showAlert(message, type = 'success') {
       document.getElementById('alert').innerHTML = `<div class="alert alert-${type}">${message}</div>`;
@@ -265,6 +376,7 @@
         if (tab.dataset.tab === 'closed') { loadDeptSelects(); loadClosedPeriods(); }
         if (tab.dataset.tab === 'users') { loadDeptSelects(); loadUsers(); }
         if (tab.dataset.tab === 'audit') loadAuditLogs();
+        if (tab.dataset.tab === 'batches') { loadBatchDeptsAdmin(); loadBatchesAdmin(); }
       });
     });
 
@@ -449,6 +561,175 @@
       const date = document.getElementById('reportDate').value;
       const url = `/api/public/reports/daily${format === 'csv' ? '/csv' : ''}?date=${date}`;
       window.open(url, '_blank');
+    }
+
+    function handleFileSelectAdmin(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        document.getElementById('csvTextAdmin').value = e.target.result;
+      };
+      reader.readAsText(file, 'UTF-8');
+    }
+
+    function downloadTemplateAdmin() {
+      const template = 'id_card,name,department,queue_date,type,phone,gender,age\n110101199001011234,张三,内科,2026-06-18,预约,13800138000,男,30\n110101199001011235,李四,外科,2026-06-18,现场,13800138001,女,25';
+      const blob = new Blob(['\uFEFF' + template], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'import_template.csv';
+      link.click();
+    }
+
+    async function submitBatchImportAdmin() {
+      const csvText = document.getElementById('csvTextAdmin').value.trim();
+      if (!csvText) return showAlert('请上传CSV文件或粘贴CSV内容', 'error');
+
+      try {
+        const result = await api.admin.batchImport(csvText);
+        showAlert(`导入完成：成功${result.success_count}条，失败${result.fail_count}条`);
+        renderImportResultAdmin(result);
+      } catch (e) {
+        showAlert(e.message, 'error');
+        if (e.message && e.details) {
+          renderImportResultAdmin({ success: false, error: e.message, details: e.details });
+        }
+      }
+    }
+
+    function renderImportResultAdmin(result) {
+      const div = document.getElementById('importResultAdmin');
+      div.style.display = 'block';
+      
+      let html = `<div class="stats-grid" style="margin-bottom: 20px;">
+        <div class="stat-card"><div class="number">${result.total_count || 0}</div><div class="label">总计</div></div>
+        <div class="stat-card green"><div class="number">${result.success_count || 0}</div><div class="label">成功</div></div>
+        <div class="stat-card red"><div class="number">${result.fail_count || 0}</div><div class="label">失败</div></div>
+      </div>`;
+
+      if (result.details && result.details.failed && result.details.failed.length > 0) {
+        html += `<h3>失败明细</h3>
+        <table style="width: 100%; margin-top: 10px;">
+          <thead><tr><th>行号</th><th>身份证号</th><th>姓名</th><th>错误信息</th></tr></thead>
+          <tbody>`;
+        result.details.failed.forEach(f => {
+          html += `<tr>
+            <td>${f.row}</td>
+            <td>${f.id_card}</td>
+            <td>${f.name}</td>
+            <td class="text-red">${f.errors ? f.errors.map(e => e.message).join('; ') : '未知错误'}</td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+      }
+
+      document.getElementById('importResultContentAdmin').innerHTML = html;
+    }
+
+    async function loadBatchDeptsAdmin() {
+      const depts = await api.getDepartments();
+      const sel = document.getElementById('batchDeptAdmin');
+      sel.innerHTML = '<option value="">全部</option>' + 
+        depts.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+    }
+
+    async function loadBatchesAdmin() {
+      const date = document.getElementById('batchDateAdmin').value;
+      const deptId = document.getElementById('batchDeptAdmin').value;
+      
+      const data = await api.admin.getBatches({ date, department_id: deptId });
+      const statusMap = {
+        pending: '待处理', processing: '处理中', completed: '已完成',
+        failed: '失败', revoked: '已撤销'
+      };
+      const statusClass = {
+        pending: 'status-waiting', processing: 'status-called', completed: 'status-consulting',
+        failed: 'status-missed', revoked: 'status-returned'
+      };
+
+      document.querySelector('#batchTableAdmin tbody').innerHTML = data.batches.map(b => `
+        <tr>
+          <td><a href="#" onclick="viewBatchDetailAdmin(${b.id}); return false;">${b.batch_no}</a></td>
+          <td>${b.imported_at}</td>
+          <td>${b.imported_by_name}</td>
+          <td>${b.total_count}</td>
+          <td>${b.success_count}</td>
+          <td>${b.fail_count}</td>
+          <td><span class="status-badge ${statusClass[b.status]}">${statusMap[b.status]}</span></td>
+          <td>
+            ${b.status === 'completed' && b.success_count > 0 ? 
+              `<button class="btn btn-sm btn-danger" onclick="showRevokeModalForBatchAdmin(${b.id})">撤销</button>` : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function viewBatchDetailAdmin(id) {
+      currentBatchIdAdmin = id;
+      const batch = await api.admin.getBatchDetail(id);
+      document.getElementById('batchDetailTitleAdmin').textContent = `批次详情 - ${batch.batch_no}`;
+      
+      const statusMap = { pending: '待处理', success: '成功', failed: '失败' };
+      const typeMap = { appointment: '预约', walkin: '现场' };
+      const statusClass = { success: 'status-consulting', failed: 'status-missed', pending: 'status-waiting' };
+
+      document.querySelector('#batchDetailTableAdmin tbody').innerHTML = batch.records.map(r => `
+        <tr>
+          <td>${r.row_index}</td>
+          <td>${r.id_card}</td>
+          <td>${r.name}</td>
+          <td>${r.department_name}</td>
+          <td>${r.queue_date}</td>
+          <td>${typeMap[r.type] || r.type}</td>
+          <td><span class="status-badge ${statusClass[r.status]}">${statusMap[r.status]}</span></td>
+          <td class="text-red">${r.error_message || '-'}</td>
+        </tr>
+      `).join('');
+
+      document.getElementById('batchDetailAdmin').style.display = 'block';
+    }
+
+    function exportCurrentBatchAdmin() {
+      if (!currentBatchIdAdmin) return;
+      window.open(api.admin.exportBatchCSV(currentBatchIdAdmin), '_blank');
+    }
+
+    function closeBatchDetailAdmin() {
+      document.getElementById('batchDetailAdmin').style.display = 'none';
+      currentBatchIdAdmin = null;
+    }
+
+    function showRevokeModalForBatchAdmin(id) {
+      currentBatchIdAdmin = id;
+      document.getElementById('revokeReasonAdmin').value = '';
+      document.getElementById('revokeModalAdmin').classList.add('active');
+    }
+
+    function showRevokeModalAdmin() {
+      if (!currentBatchIdAdmin) return;
+      document.getElementById('revokeReasonAdmin').value = '';
+      document.getElementById('revokeModalAdmin').classList.add('active');
+    }
+
+    function closeRevokeModalAdmin() {
+      document.getElementById('revokeModalAdmin').classList.remove('active');
+    }
+
+    async function confirmRevokeBatchAdmin() {
+      const reason = document.getElementById('revokeReasonAdmin').value.trim();
+      if (!reason) return showAlert('请输入撤销原因', 'error');
+      if (!confirm('确认撤销该批次？所有尚未叫号的记录将被退回。')) return;
+
+      try {
+        const result = await api.admin.revokeBatch(currentBatchIdAdmin, reason);
+        showAlert(result.message);
+        closeRevokeModalAdmin();
+        closeBatchDetailAdmin();
+        loadBatchesAdmin();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
     }
 
     loadDepartments();

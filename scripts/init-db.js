@@ -112,11 +112,65 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS import_batches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_no TEXT UNIQUE NOT NULL,
+  total_count INTEGER NOT NULL DEFAULT 0,
+  success_count INTEGER NOT NULL DEFAULT 0,
+  fail_count INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed', 'revoked')),
+  imported_by INTEGER NOT NULL,
+  imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  revoked_by INTEGER,
+  revoked_at DATETIME,
+  revoke_reason TEXT,
+  FOREIGN KEY (imported_by) REFERENCES users(id),
+  FOREIGN KEY (revoked_by) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS import_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id INTEGER NOT NULL,
+  row_index INTEGER NOT NULL,
+  id_card TEXT NOT NULL,
+  name TEXT NOT NULL,
+  phone TEXT,
+  gender TEXT,
+  age INTEGER,
+  department_id INTEGER,
+  department_name TEXT,
+  queue_date TEXT NOT NULL,
+  type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'success', 'failed')),
+  error_code TEXT,
+  error_message TEXT,
+  patient_id INTEGER,
+  queue_record_id INTEGER,
+  FOREIGN KEY (batch_id) REFERENCES import_batches(id) ON DELETE CASCADE,
+  FOREIGN KEY (patient_id) REFERENCES patients(id),
+  FOREIGN KEY (queue_record_id) REFERENCES queue_records(id),
+  UNIQUE(batch_id, row_index)
+);
+
 CREATE INDEX IF NOT EXISTS idx_queue_department_date ON queue_records(department_id, queue_date);
 CREATE INDEX IF NOT EXISTS idx_queue_status ON queue_records(status);
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_import_batch_date ON import_batches(DATE(imported_at));
+CREATE INDEX IF NOT EXISTS idx_import_record_batch ON import_records(batch_id);
+CREATE INDEX IF NOT EXISTS idx_import_record_status ON import_records(status);
 `;
 
 db.exec(initSql);
+
+const pragmaInfo = db.prepare("PRAGMA table_info(queue_records)").all();
+const existingColumns = pragmaInfo.map(c => c.name);
+if (!existingColumns.includes('batch_id')) {
+  db.exec(`
+    ALTER TABLE queue_records ADD COLUMN batch_id INTEGER REFERENCES import_batches(id);
+    ALTER TABLE queue_records ADD COLUMN import_record_id INTEGER REFERENCES import_records(id);
+  `);
+}
+db.exec("CREATE INDEX IF NOT EXISTS idx_queue_batch ON queue_records(batch_id);");
+
 console.log('数据库初始化完成');

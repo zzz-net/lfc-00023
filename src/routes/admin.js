@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { logAudit } = require('../utils/audit');
+const { processBatchImport, revokeBatch, generateBatchCSV } = require('../utils/batchImport');
 
 const router = express.Router();
 
@@ -260,6 +261,131 @@ router.post('/users', (req, res) => {
     }
     res.status(500).json({ error: err.message });
   }
+});
+
+router.post('/batch/import', (req, res) => {
+  const { csv_text } = req.body;
+  
+  if (!csv_text) {
+    return res.status(400).json({ error: 'CSV内容不能为空' });
+  }
+
+  const result = processBatchImport(csv_text, req.user.id, req.ip);
+  
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  
+  res.json(result);
+});
+
+router.get('/batches', (req, res) => {
+  const { date, department_id, page = 1, pageSize = 20 } = req.query;
+  
+  let sql = `
+    SELECT b.*, u.name as imported_by_name, u2.name as revoked_by_name,
+           COUNT(ir.id) as record_count
+    FROM import_batches b
+    LEFT JOIN users u ON b.imported_by = u.id
+    LEFT JOIN users u2 ON b.revoked_by = u2.id
+    LEFT JOIN import_records ir ON b.id = ir.batch_id
+    WHERE 1=1
+  `;
+  const params = [];
+  
+  if (date) {
+    sql += ' AND DATE(b.imported_at) = ?';
+    params.push(date);
+  }
+  
+  if (department_id) {
+    sql += ` AND b.id IN (
+      SELECT DISTINCT batch_id FROM import_records 
+      WHERE department_id = ?
+    )`;
+    params.push(department_id);
+  }
+  
+  sql += `
+    GROUP BY b.id
+    ORDER BY b.imported_at DESC
+    LIMIT ? OFFSET ?
+  `;
+  params.push(parseInt(pageSize), (parseInt(page) - 1) * parseInt(pageSize));
+  
+  const batches = db.prepare(sql).all(...params);
+  
+  let countSql = `SELECT COUNT(*) as total FROM import_batches b WHERE 1=1`;
+  const countParams = [];
+  if (date) { countParams.push(date); countSql += ' AND DATE(b.imported_at) = ?'; }
+  if (department_id) { 
+    countParams.push(department_id);
+    countSql += ` AND b.id IN (SELECT DISTINCT batch_id FROM import_records WHERE department_id = ?)`;
+  }
+  
+  const { total } = db.prepare(countSql).get(...countParams);
+  
+  res.json({
+    batches,
+    pagination: { page: parseInt(page), pageSize: parseInt(pageSize), total }
+  });
+});
+
+router.get('/batches/:id', (req, res) => {
+  const { id } = req.params;
+  
+  const batch = db.prepare(`
+    SELECT b.*, u.name as imported_by_name, u2.name as revoked_by_name
+    FROM import_batches b
+    LEFT JOIN users u ON b.imported_by = u.id
+    LEFT JOIN users u2 ON b.revoked_by = u2.id
+    WHERE b.id = ?
+  `).get(id);
+  
+  if (!batch) {
+    return res.status(404).json({ error: '批次不存在' });
+  }
+  
+  const records = db.prepare(`
+    SELECT ir.*, p.id_card as patient_id_card, p.name as patient_name,
+           qr.queue_number, qr.status as queue_status
+    FROM import_records ir
+    LEFT JOIN patients p ON ir.patient_id = p.id
+    LEFT JOIN queue_records qr ON ir.queue_record_id = qr.id
+    WHERE ir.batch_id = ?
+    ORDER BY ir.row_index
+  `).all(id);
+  
+  batch.records = records;
+  res.json(batch);
+});
+
+router.get('/batches/:id/csv', (req, res) => {
+  const { id } = req.params;
+  
+  const batch = db.prepare('SELECT * FROM import_batches WHERE id = ?').get(id);
+  if (!batch) {
+    return res.status(404).json({ error: '批次不存在' });
+  }
+  
+  const csv = generateBatchCSV(id);
+  
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="batch-${batch.batch_no}.csv"`);
+  res.send('\uFEFF' + csv);
+});
+
+router.post('/batches/:id/revoke', (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+  
+  const result = revokeBatch(parseInt(id), req.user.id, req.ip, reason);
+  
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  
+  res.json(result);
 });
 
 module.exports = router;

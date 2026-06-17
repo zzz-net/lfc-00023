@@ -34,6 +34,8 @@
     <div class="tabs">
       <div class="tab active" data-tab="register">患者登记</div>
       <div class="tab" data-tab="queue">排队管理</div>
+      <div class="tab" data-tab="batch">批量导入</div>
+      <div class="tab" data-tab="batches">导入批次</div>
     </div>
 
     <div id="register" class="tab-content active">
@@ -104,6 +106,113 @@
         </table>
       </div>
     </div>
+
+    <div id="batch" class="tab-content">
+      <div class="card">
+        <h2>批量导入预约/登记</h2>
+        <div class="form-row">
+          <div class="form-group" style="flex: 1;">
+            <label>CSV模板说明</label>
+            <div style="background: #f5f5f5; padding: 10px; border-radius: 4px; font-size: 12px;">
+              必填列：id_card, name, department, queue_date, type<br>
+              可选列：phone, gender, age<br>
+              type可选值：预约/appointment、现场/walkin<br>
+              department可填科室名称或代码（如：内科、NK）<br>
+              date格式：YYYY-MM-DD
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex: 1;">
+            <label>上传CSV文件</label>
+            <input type="file" id="csvFile" accept=".csv" onchange="handleFileSelect(event)" style="padding: 8px;">
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-default" onclick="downloadTemplate()">下载模板</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex: 1;">
+            <label>或直接粘贴CSV内容</label>
+            <textarea id="csvText" rows="10" style="width: 100%; font-family: monospace;" placeholder="id_card,name,department,queue_date,type,phone,gender,age&#10;110101199001011234,张三,内科,2026-06-18,预约,13800138000,男,30"></textarea>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="submitBatchImport()">开始导入</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="importResult" class="card" style="display: none;">
+        <h2>导入结果</h2>
+        <div id="importResultContent"></div>
+      </div>
+    </div>
+
+    <div id="batches" class="tab-content">
+      <div class="card">
+        <h2>导入批次查询</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>日期</label>
+            <input type="date" id="batchDate">
+          </div>
+          <div class="form-group">
+            <label>科室</label>
+            <select id="batchDept">
+              <option value="">全部</option>
+            </select>
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="loadBatches()">查询</button>
+          </div>
+        </div>
+        <table id="batchTable">
+          <thead>
+            <tr>
+              <th>批次号</th><th>导入时间</th><th>导入人</th>
+              <th>总数</th><th>成功</th><th>失败</th><th>状态</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div id="batchDetail" class="card" style="display: none;">
+        <div class="form-row" style="justify-content: space-between;">
+          <h2 id="batchDetailTitle">批次详情</h2>
+          <div>
+            <button class="btn btn-success" onclick="exportCurrentBatch()">导出CSV</button>
+            <button class="btn btn-danger" onclick="showRevokeModal()">撤销批次</button>
+            <button class="btn btn-default" onclick="closeBatchDetail()">关闭</button>
+          </div>
+        </div>
+        <table id="batchDetailTable">
+          <thead>
+            <tr>
+              <th>行号</th><th>身份证号</th><th>姓名</th><th>科室</th>
+              <th>日期</th><th>类型</th><th>状态</th><th>错误信息</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="revokeModal" class="modal">
+    <div class="modal-content">
+      <h3>撤销批次</h3>
+      <div class="form-group">
+        <label>撤销原因</label>
+        <textarea id="revokeReason" rows="3" style="width: 100%;" placeholder="请输入撤销原因"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeRevokeModal()">取消</button>
+        <button class="btn btn-danger" onclick="confirmRevokeBatch()">确认撤销</button>
+      </div>
+    </div>
   </div>
 
   <div id="returnModal" class="modal">
@@ -126,9 +235,11 @@
     let currentUser = getUser();
     let currentPatientId = null;
     let returnQueueId = null;
+    let currentBatchId = null;
     if (!currentUser || currentUser.role !== 'nurse') window.location.href = 'login.html';
     document.getElementById('userInfo').textContent = `${currentUser.name} (护士)`;
     document.getElementById('queueDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('batchDate').value = new Date().toISOString().split('T')[0];
 
     function showAlert(message, type = 'success') {
       document.getElementById('alert').innerHTML = `<div class="alert alert-${type}">${message}</div>`;
@@ -148,6 +259,7 @@
         tab.classList.add('active');
         document.getElementById(tab.dataset.tab).classList.add('active');
         if (tab.dataset.tab === 'queue') loadQueue();
+        if (tab.dataset.tab === 'batches') { loadBatchDepts(); loadBatches(); }
       });
     });
 
@@ -328,6 +440,177 @@
         loadStats();
       }
     }, 5000);
+
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        document.getElementById('csvText').value = e.target.result;
+      };
+      reader.readAsText(file, 'UTF-8');
+    }
+
+    function downloadTemplate() {
+      const template = 'id_card,name,department,queue_date,type,phone,gender,age\n110101199001011234,张三,内科,2026-06-18,预约,13800138000,男,30\n110101199001011235,李四,外科,2026-06-18,现场,13800138001,女,25';
+      const blob = new Blob(['\uFEFF' + template], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'import_template.csv';
+      link.click();
+    }
+
+    async function submitBatchImport() {
+      const csvText = document.getElementById('csvText').value.trim();
+      if (!csvText) return showAlert('请上传CSV文件或粘贴CSV内容', 'error');
+
+      try {
+        const result = await api.nurse.batchImport(csvText);
+        showAlert(`导入完成：成功${result.success_count}条，失败${result.fail_count}条`);
+        renderImportResult(result);
+        loadData();
+      } catch (e) {
+        showAlert(e.message, 'error');
+        if (e.message && e.details) {
+          renderImportResult({ success: false, error: e.message, details: e.details });
+        }
+      }
+    }
+
+    function renderImportResult(result) {
+      const div = document.getElementById('importResult');
+      div.style.display = 'block';
+      
+      let html = `<div class="stats-grid" style="margin-bottom: 20px;">
+        <div class="stat-card"><div class="number">${result.total_count || 0}</div><div class="label">总计</div></div>
+        <div class="stat-card green"><div class="number">${result.success_count || 0}</div><div class="label">成功</div></div>
+        <div class="stat-card red"><div class="number">${result.fail_count || 0}</div><div class="label">失败</div></div>
+      </div>`;
+
+      if (result.details && result.details.failed && result.details.failed.length > 0) {
+        html += `<h3>失败明细</h3>
+        <table style="width: 100%; margin-top: 10px;">
+          <thead><tr><th>行号</th><th>身份证号</th><th>姓名</th><th>错误信息</th></tr></thead>
+          <tbody>`;
+        result.details.failed.forEach(f => {
+          html += `<tr>
+            <td>${f.row}</td>
+            <td>${f.id_card}</td>
+            <td>${f.name}</td>
+            <td class="text-red">${f.errors ? f.errors.map(e => e.message).join('; ') : '未知错误'}</td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+      }
+
+      document.getElementById('importResultContent').innerHTML = html;
+    }
+
+    async function loadBatchDepts() {
+      const depts = await api.getDepartments();
+      const sel = document.getElementById('batchDept');
+      sel.innerHTML = '<option value="">全部</option>' + 
+        depts.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+    }
+
+    async function loadBatches() {
+      const date = document.getElementById('batchDate').value;
+      const deptId = document.getElementById('batchDept').value;
+      
+      const data = await api.nurse.getBatches({ date, department_id: deptId });
+      const statusMap = {
+        pending: '待处理', processing: '处理中', completed: '已完成',
+        failed: '失败', revoked: '已撤销'
+      };
+      const statusClass = {
+        pending: 'status-waiting', processing: 'status-called', completed: 'status-consulting',
+        failed: 'status-missed', revoked: 'status-returned'
+      };
+
+      document.querySelector('#batchTable tbody').innerHTML = data.batches.map(b => `
+        <tr>
+          <td><a href="#" onclick="viewBatchDetail(${b.id}); return false;">${b.batch_no}</a></td>
+          <td>${b.imported_at}</td>
+          <td>${b.imported_by_name}</td>
+          <td>${b.total_count}</td>
+          <td>${b.success_count}</td>
+          <td>${b.fail_count}</td>
+          <td><span class="status-badge ${statusClass[b.status]}">${statusMap[b.status]}</span></td>
+          <td>
+            ${b.status === 'completed' && b.success_count > 0 ? 
+              `<button class="btn btn-sm btn-danger" onclick="showRevokeModalForBatch(${b.id})">撤销</button>` : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function viewBatchDetail(id) {
+      currentBatchId = id;
+      const batch = await api.nurse.getBatchDetail(id);
+      document.getElementById('batchDetailTitle').textContent = `批次详情 - ${batch.batch_no}`;
+      
+      const statusMap = { pending: '待处理', success: '成功', failed: '失败' };
+      const typeMap = { appointment: '预约', walkin: '现场' };
+      const statusClass = { success: 'status-consulting', failed: 'status-missed', pending: 'status-waiting' };
+
+      document.querySelector('#batchDetailTable tbody').innerHTML = batch.records.map(r => `
+        <tr>
+          <td>${r.row_index}</td>
+          <td>${r.id_card}</td>
+          <td>${r.name}</td>
+          <td>${r.department_name}</td>
+          <td>${r.queue_date}</td>
+          <td>${typeMap[r.type] || r.type}</td>
+          <td><span class="status-badge ${statusClass[r.status]}">${statusMap[r.status]}</span></td>
+          <td class="text-red">${r.error_message || '-'}</td>
+        </tr>
+      `).join('');
+
+      document.getElementById('batchDetail').style.display = 'block';
+    }
+
+    function exportCurrentBatch() {
+      if (!currentBatchId) return;
+      window.open(api.nurse.exportBatchCSV(currentBatchId), '_blank');
+    }
+
+    function closeBatchDetail() {
+      document.getElementById('batchDetail').style.display = 'none';
+      currentBatchId = null;
+    }
+
+    function showRevokeModalForBatch(id) {
+      currentBatchId = id;
+      document.getElementById('revokeReason').value = '';
+      document.getElementById('revokeModal').classList.add('active');
+    }
+
+    function showRevokeModal() {
+      if (!currentBatchId) return;
+      document.getElementById('revokeReason').value = '';
+      document.getElementById('revokeModal').classList.add('active');
+    }
+
+    function closeRevokeModal() {
+      document.getElementById('revokeModal').classList.remove('active');
+    }
+
+    async function confirmRevokeBatch() {
+      const reason = document.getElementById('revokeReason').value.trim();
+      if (!reason) return showAlert('请输入撤销原因', 'error');
+      if (!confirm('确认撤销该批次？所有尚未叫号的记录将被退回。')) return;
+
+      try {
+        const result = await api.nurse.revokeBatch(currentBatchId, reason);
+        showAlert(result.message);
+        closeRevokeModal();
+        closeBatchDetail();
+        loadBatches();
+        loadData();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
   </script>
 </body>
 </html>

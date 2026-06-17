@@ -66,6 +66,14 @@ const api = {
     deleteClosedPeriod: (id) => request(`/admin/closed-periods/${id}`, { method: 'DELETE' }),
     getUsers: () => request('/admin/users'),
     createUser: (data) => request('/admin/users', { method: 'POST', body: JSON.stringify(data) }),
+    batchImport: (csvText) => request('/admin/batch/import', { method: 'POST', body: JSON.stringify({ csv_text: csvText }) }),
+    getBatches: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return request(`/admin/batches${qs ? `?${qs}` : ''}`);
+    },
+    getBatchDetail: (id) => request(`/admin/batches/${id}`),
+    exportBatchCSV: (id) => `/api/admin/batches/${id}/csv`,
+    revokeBatch: (id, reason) => request(`/admin/batches/${id}/revoke`, { method: 'POST', body: JSON.stringify({ reason }) }),
   },
 
   nurse: {
@@ -77,6 +85,14 @@ const api = {
     missPatient: (id) => request(`/nurse/queue/miss/${id}`, { method: 'POST' }),
     returnQueue: (id, reason) => request(`/nurse/queue/return/${id}`, { method: 'POST', body: JSON.stringify({ reason }) }),
     getQueueStats: (deptId, date) => request(`/nurse/queue/stats/${deptId}${date ? `?date=${date}` : ''}`),
+    batchImport: (csvText) => request('/nurse/batch/import', { method: 'POST', body: JSON.stringify({ csv_text: csvText }) }),
+    getBatches: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return request(`/nurse/batches${qs ? `?${qs}` : ''}`);
+    },
+    getBatchDetail: (id) => request(`/nurse/batches/${id}`),
+    exportBatchCSV: (id) => `/api/nurse/batches/${id}/csv`,
+    revokeBatch: (id, reason) => request(`/nurse/batches/${id}/revoke`, { method: 'POST', body: JSON.stringify({ reason }) }),
   },
 
   doctor: {
