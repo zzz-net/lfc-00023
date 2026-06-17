@@ -191,12 +191,20 @@ router.post('/queue/miss/:id', (req, res) => {
     return res.status(404).json({ error: '排队记录不存在' });
   }
 
-  if (record.status !== 'called') {
-    return res.status(400).json({ error: '只有已叫号的患者才能过号' });
-  }
+  const fetchDetail = () => db.prepare(`
+    SELECT qr.*, p.name as patient_name, d.name as department_name
+    FROM queue_records qr
+    JOIN patients p ON qr.patient_id = p.id
+    JOIN departments d ON qr.department_id = d.id
+    WHERE qr.id = ?
+  `).get(id);
 
   if (record.status === 'missed') {
-    return res.status(400).json({ error: '该患者已经过号，不能重复过号' });
+    return res.json(fetchDetail());
+  }
+
+  if (record.status !== 'called') {
+    return res.status(400).json({ error: '只有已叫号的患者才能过号' });
   }
 
   db.prepare(`
@@ -208,15 +216,7 @@ router.post('/queue/miss/:id', (req, res) => {
   logAudit(req.user.id, 'miss_patient', 'queue_record', id, 
     { queue_number: record.queue_number }, req.ip);
   
-  const updated = db.prepare(`
-    SELECT qr.*, p.name as patient_name, d.name as department_name
-    FROM queue_records qr
-    JOIN patients p ON qr.patient_id = p.id
-    JOIN departments d ON qr.department_id = d.id
-    WHERE qr.id = ?
-  `).get(id);
-  
-  res.json(updated);
+  res.json(fetchDetail());
 });
 
 router.post('/queue/return/:id', (req, res) => {

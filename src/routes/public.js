@@ -123,7 +123,7 @@ router.get('/audit-logs', (req, res) => {
     } catch (e) {}
   });
   
-  const countSql = `
+  let countSql = `
     SELECT COUNT(*) as total FROM audit_logs al WHERE 1=1
   `;
   const countParams = [];

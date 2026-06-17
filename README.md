@@ -120,11 +120,15 @@ npm start
 2. 用内科医生 doctor1 登录
 3. 尝试通过接口调用接诊外科患者，系统返回「越权操作：该患者不属于您的科室」
 
-### 场景六：测试重复过号
+### 场景六：测试重复过号（幂等）
 
 1. 护士叫号一位患者
-2. 点击「过号」，状态变为「过号」
-3. 再次点击过号（如果有按钮），系统提示「该患者已经过号，不能重复过号」
+2. 第一次「过号」，状态变为「过号」(missed)，写入一条过号审计事件
+3. 再次「过号」，接口返回成功（200），状态仍为「过号」，**不产生新的审计事件**
+4. 连续多次过号，审计中该记录的 `miss_patient` 事件始终只有一条
+
+> 说明：过号接口对 `missed` 状态做幂等处理。重复过号视为成功，队列状态不被改坏，审计只保留首次过号事件。
+> 仍会报错的情况：对 `waiting`/`completed`/`consulting`/`returned` 状态调用过号，返回 400「只有已叫号的患者才能过号」。
 
 ### 场景七：测试退回功能
 
@@ -136,14 +140,47 @@ npm start
 
 ### 场景八：测试系统重启数据一致性
 
-1. 完成上述部分操作后，停止服务（Ctrl+C）
-2. 重新启动 `npm start`
-3. 登录查看：
+1. 完成上述部分操作后，记录当前队列状态与审计事件
+2. 停止服务（仅停止本进程，例如记下监听 3000 端口的 `node server.js` PID 后 `Stop-Process -Id <PID>`；切勿按进程名批量结束）
+3. 重新启动 `npm start`
+4. 登录查看：
    - 排队顺序保持不变
    - 已完成、过号、退回状态正确
    - 退回原因、操作者信息完整
    - 审计历史记录完整
    - 日报导出数据一致
+
+> 说明：队列与审计数据持久化在 `data/clinic.db`（SQLite + WAL 模式）。重启后会自动回放 WAL，已提交事务不会丢失。注意：重启时请确保只有一个 `node server.js` 进程在操作该数据库文件，多个进程同时硬终止可能导致 WAL 竞争而丢失未落盘数据。
+
+### 场景九：审计日志筛选查询
+
+`GET /api/public/audit-logs` 支持 `action`、`user_id`、`start_date`、`end_date`、`page`、`pageSize` 任意组合：
+
+```
+GET /api/public/audit-logs?action=miss_patient
+GET /api/public/audit-logs?user_id=2
+GET /api/public/audit-logs?start_date=2026-06-01&end_date=2026-06-30
+GET /api/public/audit-logs?action=miss_patient&user_id=2&page=1&pageSize=5
+GET /api/public/audit-logs?page=2&pageSize=10
+```
+
+预期：以上任一组合均返回 200，并包含 `pagination.total` 与 `logs` 数组；`action` 筛选结果中所有记录的 `action` 字段都与入参一致。
+
+### 场景十：回归测试（一键复现上述两个修复）
+
+```
+npm start                          # 1. 启动服务
+node scripts/test-regression.js    # 2. 覆盖：叫号→过号→重复过号幂等→审计筛选组合→过号审计唯一性
+# 3. 重启服务（记下 3000 端口的 node PID，Stop-Process -Id <PID>，再 npm start）
+node scripts/test-after-restart.js # 4. 重启后复测：队列/过号/日志筛选一致性
+```
+
+`scripts/test-regression.js` 共 26 项断言，包含：
+- 重复过号第二次/第三次返回 200 且状态仍为 `missed`，不写入 `return_reason`
+- `action` / `user_id` / `date` / 全组合 / 分页 筛选均返回 200
+- 同一排队记录的 `miss_patient` 审计事件仅 1 条
+
+`scripts/test-after-restart.js` 在重启后运行，复测：队列状态、过号幂等、审计筛选均与重启前一致。
 
 ## API 接口文档
 
@@ -206,7 +243,7 @@ GET    /api/doctor/history             # 历史接诊记录
 GET    /api/public/departments         # 获取活跃科室列表
 GET    /api/public/queue/status/:dept_id  # 获取队列状态
 GET    /api/public/queue/display/:dept_id # 获取叫号屏数据
-GET    /api/public/audit-logs          # 审计日志（支持分页筛选）
+GET    /api/public/audit-logs          # 审计日志（支持 action/user_id/date/分页 组合筛选）
 GET    /api/public/reports/daily       # 导出日报 JSON
 GET    /api/public/reports/daily/csv   # 导出日报 CSV
 ```
@@ -234,7 +271,7 @@ GET    /api/public/reports/daily/csv   # 导出日报 CSV
 4. **叫号规则**: 同一时间只能有一位患者在就诊
 5. **越权检测**: 医生只能接诊本科室、由自己接诊的患者
 6. **状态流转**: 严格的状态机控制，不允许逆向操作
-7. **重复过号**: 已过号患者不能再次过号
+7. **过号幂等**: 对 `missed` 状态重复过号视为成功（幂等），不重复写审计、不改状态；对其它非 `called` 状态才返回 400
 8. **退回限制**: 已完成或正在就诊的患者不能退回
 9. **数据一致性**: 所有操作记录审计日志，可追溯
 
@@ -245,6 +282,8 @@ npm start      # 启动服务
 npm run init   # 初始化数据库表
 npm run seed   # 插入样例数据
 npm run reset  # 重置数据库（删除+重建+插入样例）
+node scripts/test-regression.js     # 回归测试：过号幂等 + 审计筛选
+node scripts/test-after-restart.js  # 重启后一致性复测
 ```
 
 ## 项目结构
@@ -257,7 +296,9 @@ npm run reset  # 重置数据库（删除+重建+插入样例）
 ├── scripts/
 │   ├── init-db.js         # 数据库初始化
 │   ├── seed-data.js       # 样例数据
-│   └── reset-db.js        # 数据库重置
+│   ├── reset-db.js        # 数据库重置
+│   ├── test-regression.js # 回归测试（过号幂等 + 审计筛选）
+│   └── test-after-restart.js # 重启后一致性复测
 ├── src/
 │   ├── db/index.js        # 数据库连接
 │   ├── middleware/auth.js # 认证中间件
