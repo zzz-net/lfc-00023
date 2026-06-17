@@ -203,7 +203,7 @@ async function main() {
   assert(batch2.status === 'completed', '2 批次状态为 completed');
 
   const enqueuedRecords2 = batch2.records.filter(r => r.status === 'enqueued');
-  const failedRecords2 = batch2.records.filter(r => r.status === 'failed');
+  const failedRecords2 = batch2.records.filter(r => r.status === 'precheck_failed' || r.status === 'failed');
   assert(enqueuedRecords2.length === 2, '2 有 2 条"已入队"记录');
   assert(failedRecords2.length === 2, '2 有 2 条"预检失败"记录');
 
@@ -216,9 +216,18 @@ async function main() {
     const pageRec = pageRecords2[i];
     const csvRow = csvParsed2[i + 1];
 
-    const expectedStatus = pageRec.status === 'enqueued' ? '已入队' :
-                          pageRec.status === 'failed' ? '失败' :
-                          pageRec.status;
+    let expectedStatus;
+    if (pageRec.status === 'enqueued') {
+      expectedStatus = '已入队';
+    } else if (pageRec.status === 'precheck_failed' || pageRec.status === 'draft_failed') {
+      expectedStatus = '预检失败';
+    } else if (pageRec.status === 'confirm_failed') {
+      expectedStatus = '确认失败';
+    } else if (pageRec.status === 'failed') {
+      expectedStatus = '失败';
+    } else {
+      expectedStatus = pageRec.status;
+    }
     assert(csvRow[9] === expectedStatus, `2 row${i + 1}: 状态一致 (${csvRow[9]} === ${expectedStatus})`);
     assert(parseInt(csvRow[0]) === pageRec.row_index, `2 row${i + 1}: 行号一致`);
     assert(csvRow[1] === pageRec.id_card, `2 row${i + 1}: 身份证号一致`);

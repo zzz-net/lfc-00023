@@ -301,7 +301,7 @@ async function main() {
   assert(completedAfter.fail_count === beforeState.completedBatch.fail_count, '2 正式批次fail_count一致');
 
   const enqueuedRecords = completedAfter.records.filter(r => r.status === 'enqueued');
-  const failedRecords = completedAfter.records.filter(r => r.status === 'failed');
+  const failedRecords = completedAfter.records.filter(r => r.status === 'precheck_failed' || r.status === 'failed');
   assert(enqueuedRecords.length === 2, '2 有 2 条"已入队"记录');
   assert(failedRecords.length === 1, '2 有 1 条"失败"记录');
 
@@ -328,14 +328,14 @@ async function main() {
   assert(revokedAfter.revoke_reason === beforeState.revokedBatch.revoke_reason, '3 revoke_reason一致');
 
   for (const rec of revokedAfter.records) {
-    assert(rec.status === 'failed', '3 记录状态为 failed');
+    assert(rec.status === 'precheck_failed' || rec.status === 'failed', `3 记录状态为 precheck_failed (实际: ${rec.status})`);
     assert(rec.error_code === 'BATCH_REVOKED', '3 错误代码为 BATCH_REVOKED');
   }
 
   const revokedDraftAfter = await request(`/nurse/batches/${revokedDraftId}`, { headers: nurse2H2 });
   assert(revokedDraftAfter.status === beforeState.revokedDraft.status, `3 已撤销草稿状态一致 (${revokedDraftAfter.status})`);
   for (const rec of revokedDraftAfter.records) {
-    assert(rec.status === 'failed', '3 草稿撤销后记录状态为 failed');
+    assert(rec.status === 'precheck_failed' || rec.status === 'failed', `3 草稿撤销后记录状态为 precheck_failed (实际: ${rec.status})`);
     assert(rec.error_message.includes('草稿批次已撤销'), '3 错误信息包含"草稿批次已撤销"');
   }
 

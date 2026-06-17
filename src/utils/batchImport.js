@@ -880,7 +880,7 @@ function revokeBatch(batchId, userId, ipAddress, reason) {
 
     db.prepare(`
       UPDATE import_records SET status = 'precheck_failed', error_code = 'BATCH_REVOKED', error_message = '批次已撤销'
-      WHERE batch_id = ? AND status = 'enqueued'
+      WHERE batch_id = ? AND status IN ('enqueued', 'precheck_failed', 'confirm_failed')
     `).run(batchId);
 
     logAudit(userId, 'revoke_batch', 'import_batch', batchId, {
@@ -928,13 +928,20 @@ function generateBatchCSV(batchId) {
     failed: '失败', 
     enqueued: '已入队' 
   };
+
+  function getDisplayStatus(r) {
+    if (r.error_code === 'BATCH_REVOKED') {
+      return '失败';
+    }
+    return statusMap[r.status] || r.status;
+  }
   
   const typeMap = { appointment: '预约', walkin: '现场' };
 
   const rows = records.map(r => [
     r.row_index, r.id_card, r.name, r.phone || '', r.gender || '', r.age || '',
     r.department_name || '', r.queue_date, typeMap[r.type] || r.type,
-    statusMap[r.status] || r.status,
+    getDisplayStatus(r),
     r.is_overwrite ? '是' : '否',
     r.overwrite_hint || '',
     r.error_code || '', r.error_message || ''
