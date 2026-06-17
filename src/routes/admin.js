@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { logAudit } = require('../utils/audit');
-const { processBatchImport, revokeBatch, generateBatchCSV } = require('../utils/batchImport');
+const { processBatchImport, precheckBatch, confirmBatch, revokeBatch, generateBatchCSV } = require('../utils/batchImport');
 
 const router = express.Router();
 
@@ -263,14 +263,14 @@ router.post('/users', (req, res) => {
   }
 });
 
-router.post('/batch/import', (req, res) => {
+router.post('/batch/precheck', (req, res) => {
   const { csv_text } = req.body;
   
   if (!csv_text) {
     return res.status(400).json({ error: 'CSV内容不能为空' });
   }
 
-  const result = processBatchImport(csv_text, req.user.id, req.ip);
+  const result = precheckBatch(csv_text, req.user.id, req.ip);
   
   if (!result.success) {
     return res.status(400).json(result);
@@ -279,15 +279,59 @@ router.post('/batch/import', (req, res) => {
   res.json(result);
 });
 
+router.post('/batch/confirm', (req, res) => {
+  const { batch_id } = req.body;
+  
+  if (!batch_id) {
+    return res.status(400).json({ error: '批次ID不能为空' });
+  }
+
+  const batch = db.prepare('SELECT * FROM import_batches WHERE id = ?').get(batch_id);
+  if (!batch) {
+    return res.status(404).json({ error: '批次不存在' });
+  }
+
+  const result = confirmBatch(parseInt(batch_id), req.user.id, req.ip);
+  
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  
+  res.json(result);
+});
+
+router.post('/batch/import', (req, res) => {
+  const { csv_text } = req.body;
+  
+  if (!csv_text) {
+    return res.status(400).json({ error: 'CSV内容不能为空' });
+  }
+
+  const precheckResult = precheckBatch(csv_text, req.user.id, req.ip);
+  
+  if (!precheckResult.success) {
+    return res.status(400).json(precheckResult);
+  }
+
+  const confirmResult = confirmBatch(precheckResult.batch_id, req.user.id, req.ip);
+  
+  if (!confirmResult.success) {
+    return res.status(400).json(confirmResult);
+  }
+  
+  res.json(confirmResult);
+});
+
 router.get('/batches', (req, res) => {
   const { date, department_id, page = 1, pageSize = 20 } = req.query;
   
   let sql = `
-    SELECT b.*, u.name as imported_by_name, u2.name as revoked_by_name,
+    SELECT b.*, u.name as imported_by_name, u2.name as revoked_by_name, u3.name as confirmed_by_name,
            COUNT(ir.id) as record_count
     FROM import_batches b
     LEFT JOIN users u ON b.imported_by = u.id
     LEFT JOIN users u2 ON b.revoked_by = u2.id
+    LEFT JOIN users u3 ON b.confirmed_by = u3.id
     LEFT JOIN import_records ir ON b.id = ir.batch_id
     WHERE 1=1
   `;
@@ -335,10 +379,11 @@ router.get('/batches/:id', (req, res) => {
   const { id } = req.params;
   
   const batch = db.prepare(`
-    SELECT b.*, u.name as imported_by_name, u2.name as revoked_by_name
+    SELECT b.*, u.name as imported_by_name, u2.name as revoked_by_name, u3.name as confirmed_by_name
     FROM import_batches b
     LEFT JOIN users u ON b.imported_by = u.id
     LEFT JOIN users u2 ON b.revoked_by = u2.id
+    LEFT JOIN users u3 ON b.confirmed_by = u3.id
     WHERE b.id = ?
   `).get(id);
   

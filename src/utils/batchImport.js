@@ -17,7 +17,9 @@ const ERROR_CODES = {
   NO_SLOT_CONFIG: 'NO_SLOT_CONFIG',
   SLOT_FULL: 'SLOT_FULL',
   WALKIN_LIMIT_REACHED: 'WALKIN_LIMIT_REACHED',
-  INTERNAL_ERROR: 'INTERNAL_ERROR'
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+  BATCH_NOT_DRAFT: 'BATCH_NOT_DRAFT',
+  BATCH_NOT_FOUND: 'BATCH_NOT_FOUND'
 };
 
 function parseCSV(csvText) {
@@ -159,22 +161,17 @@ function validateBatch(records, departments) {
     errors: validateRecord(record, departmentsMap)
   }));
 
-  const idCardCounts = new Map();
-  records.forEach(r => {
-    if (r.id_card) {
-      const key = `${r.id_card}|${r._departmentId || r.department}|${r.queue_date}`;
-      idCardCounts.set(key, (idCardCounts.get(key) || 0) + 1);
-    }
-  });
-
+  const seenKeys = new Set();
   results.forEach(r => {
     if (r.record.id_card && r.record._departmentId && r.record.queue_date) {
       const key = `${r.record.id_card}|${r.record._departmentId}|${r.record.queue_date}`;
-      if (idCardCounts.get(key) > 1) {
+      if (seenKeys.has(key)) {
         r.errors.push({ 
           code: ERROR_CODES.DUPLICATE_ID_CARD_IN_BATCH, 
           message: '同一批次中存在重复的身份证号+科室+日期组合' 
         });
+      } else {
+        seenKeys.add(key);
       }
     }
   });
@@ -182,37 +179,30 @@ function validateBatch(records, departments) {
   return results;
 }
 
-function checkDatabaseConflicts(records) {
+function checkDatabaseConflictsPrecheck(records) {
   const results = [];
-  const slotUsage = new Map();
-  const walkinUsage = new Map();
-  const registeredPatients = new Set();
 
   for (const record of records) {
     const conflicts = [];
+    let isOverwrite = false;
+    let overwriteHint = null;
 
     if (record._departmentId && record.queue_date) {
-      const patientKey = `${record.id_card}|${record._departmentId}|${record.queue_date}`;
-      if (registeredPatients.has(patientKey)) {
+      const existing = db.prepare(`
+        SELECT COUNT(*) as count FROM queue_records 
+        WHERE patient_id IN (SELECT id FROM patients WHERE id_card = ?)
+          AND department_id = ? 
+          AND queue_date = ? 
+          AND status NOT IN ('returned')
+      `).get(record.id_card, record._departmentId, record.queue_date);
+
+      if (existing.count > 0) {
         conflicts.push({ 
           code: ERROR_CODES.DUPLICATE_REGISTRATION, 
           message: '该患者当日已在此科室挂号' 
         });
-      } else {
-        const existing = db.prepare(`
-          SELECT COUNT(*) as count FROM queue_records 
-          WHERE patient_id IN (SELECT id FROM patients WHERE id_card = ?)
-            AND department_id = ? 
-            AND queue_date = ? 
-            AND status NOT IN ('returned')
-        `).get(record.id_card, record._departmentId, record.queue_date);
-
-        if (existing.count > 0) {
-          conflicts.push({ 
-            code: ERROR_CODES.DUPLICATE_REGISTRATION, 
-            message: '该患者当日已在此科室挂号' 
-          });
-        }
+        isOverwrite = true;
+        overwriteHint = '该患者当日已在此科室挂号，导入将失败';
       }
 
       if (conflicts.length === 0) {
@@ -220,8 +210,8 @@ function checkDatabaseConflicts(records) {
         const walkinKey = `${record._departmentId}|${record.queue_date}|walkin`;
         
         const slot = db.prepare('SELECT * FROM daily_slots WHERE department_id = ? AND date = ?').get(record._departmentId, record.queue_date);
-        const currentTotal = db.prepare("SELECT COUNT(*) as count FROM queue_records WHERE department_id = ? AND queue_date = ? AND status NOT IN ('returned')").get(record._departmentId, record.queue_date).count + (slotUsage.get(slotKey) || 0);
-        const currentWalkin = db.prepare("SELECT COUNT(*) as count FROM queue_records WHERE department_id = ? AND queue_date = ? AND type = ? AND status NOT IN ('returned')").get(record._departmentId, record.queue_date, 'walkin').count + (walkinUsage.get(walkinKey) || 0);
+        const currentTotal = db.prepare("SELECT COUNT(*) as count FROM queue_records WHERE department_id = ? AND queue_date = ? AND status NOT IN ('returned')").get(record._departmentId, record.queue_date).count;
+        const currentWalkin = db.prepare("SELECT COUNT(*) as count FROM queue_records WHERE department_id = ? AND queue_date = ? AND type = ? AND status NOT IN ('returned')").get(record._departmentId, record.queue_date, 'walkin').count;
 
         if (isDepartmentClosed(record._departmentId, record.queue_date)) {
           conflicts.push({ code: ERROR_CODES.DEPARTMENT_CLOSED, message: '该科室今日停诊' });
@@ -231,23 +221,17 @@ function checkDatabaseConflicts(records) {
           conflicts.push({ code: ERROR_CODES.SLOT_FULL, message: '今日号源已满' });
         } else if (record._type === 'walkin' && currentWalkin >= slot.walkin_limit) {
           conflicts.push({ code: ERROR_CODES.WALKIN_LIMIT_REACHED, message: '今日现场加号已满' });
-        } else {
-          slotUsage.set(slotKey, (slotUsage.get(slotKey) || 0) + 1);
-          if (record._type === 'walkin') {
-            walkinUsage.set(walkinKey, (walkinUsage.get(walkinKey) || 0) + 1);
-          }
-          registeredPatients.add(patientKey);
         }
       }
     }
 
-    results.push({ record, conflicts });
+    results.push({ record, conflicts, isOverwrite, overwriteHint });
   }
 
   return results;
 }
 
-function processBatchImport(csvText, userId, ipAddress) {
+function precheckBatch(csvText, userId, ipAddress) {
   const parseResult = parseCSV(csvText);
   if (parseResult.error) {
     return { 
@@ -265,7 +249,7 @@ function processBatchImport(csvText, userId, ipAddress) {
     .filter(r => r.errors.length === 0)
     .map(r => r.record);
 
-  const conflictResults = checkDatabaseConflicts(validRecords);
+  const conflictResults = checkDatabaseConflictsPrecheck(validRecords);
   
   const allResults = [];
   validationResults.forEach(vr => {
@@ -274,7 +258,9 @@ function processBatchImport(csvText, userId, ipAddress) {
         rowIndex: vr.record._rowIndex,
         record: vr.record,
         errors: vr.errors,
-        success: false
+        success: false,
+        isOverwrite: false,
+        overwriteHint: null
       });
     }
   });
@@ -283,19 +269,25 @@ function processBatchImport(csvText, userId, ipAddress) {
     const existing = allResults.find(r => r.rowIndex === cr.record._rowIndex);
     if (existing) {
       existing.errors.push(...cr.conflicts);
+      existing.isOverwrite = cr.isOverwrite;
+      existing.overwriteHint = cr.overwriteHint;
     } else if (cr.conflicts.length > 0) {
       allResults.push({
         rowIndex: cr.record._rowIndex,
         record: cr.record,
         errors: cr.conflicts,
-        success: false
+        success: false,
+        isOverwrite: cr.isOverwrite,
+        overwriteHint: cr.overwriteHint
       });
     } else {
       allResults.push({
         rowIndex: cr.record._rowIndex,
         record: cr.record,
         errors: [],
-        success: true
+        success: true,
+        isOverwrite: cr.isOverwrite,
+        overwriteHint: cr.overwriteHint
       });
     }
   });
@@ -308,7 +300,7 @@ function processBatchImport(csvText, userId, ipAddress) {
   const insertTransaction = db.transaction(() => {
     const batchStmt = db.prepare(`
       INSERT INTO import_batches (batch_no, total_count, success_count, fail_count, status, imported_by)
-      VALUES (?, ?, ?, ?, 'completed', ?)
+      VALUES (?, ?, ?, ?, 'draft', ?)
     `);
     const batchResult = batchStmt.run(batchNo, allResults.length, successRecords.length, failRecords.length, userId);
     const batchId = batchResult.lastInsertRowid;
@@ -317,9 +309,102 @@ function processBatchImport(csvText, userId, ipAddress) {
       INSERT INTO import_records (
         batch_id, row_index, id_card, name, phone, gender, age, 
         department_id, department_name, queue_date, type, 
-        status, error_code, error_message
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        status, error_code, error_message, is_overwrite, overwrite_hint
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
+
+    for (const result of allResults) {
+      const r = result.record;
+      const isSuccess = result.success;
+      const errorCode = isSuccess ? null : result.errors[0].code;
+      const errorMessage = isSuccess ? null : result.errors.map(e => e.message).join('; ');
+
+      recordStmt.run(
+        batchId, r._rowIndex, r.id_card, r.name, r.phone || null,
+        r._gender || r.gender || null, r._age || r.age || null,
+        r._departmentId || null, r._departmentName || r.department || null,
+        r.queue_date, r._type || r.type,
+        isSuccess ? 'draft_success' : 'draft_failed',
+        errorCode, errorMessage,
+        result.isOverwrite ? 1 : 0,
+        result.overwriteHint
+      );
+    }
+
+    logAudit(userId, 'precheck_batch', 'import_batch', batchId, {
+      batch_no: batchNo,
+      total_count: allResults.length,
+      success_count: successRecords.length,
+      fail_count: failRecords.length
+    }, ipAddress);
+
+    return { batchId, batchNo };
+  });
+
+  try {
+    const { batchId, batchNo } = insertTransaction();
+    return {
+      success: true,
+      batch_id: batchId,
+      batch_no: batchNo,
+      status: 'draft',
+      total_count: allResults.length,
+      success_count: successRecords.length,
+      fail_count: failRecords.length,
+      details: {
+        success: successRecords.map(r => ({
+          row: r.rowIndex,
+          id_card: r.record.id_card,
+          name: r.record.name,
+          department: r.record._departmentName,
+          queue_date: r.record.queue_date,
+          type: r.record._type,
+          is_overwrite: r.isOverwrite,
+          overwrite_hint: r.overwriteHint
+        })),
+        failed: failRecords.map(r => ({
+          row: r.rowIndex,
+          id_card: r.record.id_card,
+          name: r.record.name,
+          department: r.record._departmentName || r.record.department,
+          queue_date: r.record.queue_date,
+          type: r.record._type || r.record.type,
+          is_overwrite: r.isOverwrite,
+          overwrite_hint: r.overwriteHint,
+          errors: r.errors
+        }))
+      }
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: '预检失败：' + err.message,
+      errorCode: ERROR_CODES.INTERNAL_ERROR
+    };
+  }
+}
+
+function confirmBatch(batchId, userId, ipAddress) {
+  const batch = db.prepare(`
+    SELECT * FROM import_batches WHERE id = ?
+  `).get(batchId);
+
+  if (!batch) {
+    return { success: false, error: '批次不存在', errorCode: ERROR_CODES.BATCH_NOT_FOUND };
+  }
+
+  if (batch.status !== 'draft') {
+    return { success: false, error: '该批次不是草稿状态，无法确认', errorCode: ERROR_CODES.BATCH_NOT_DRAFT };
+  }
+
+  const draftRecords = db.prepare(`
+    SELECT * FROM import_records WHERE batch_id = ? ORDER BY row_index
+  `).all(batchId);
+
+  const confirmTransaction = db.transaction(() => {
+    const slotUsage = new Map();
+    const walkinUsage = new Map();
+    const registeredPatients = new Set();
 
     const patientStmt = db.prepare(`
       INSERT OR IGNORE INTO patients (name, id_card, phone, gender, age)
@@ -336,97 +421,154 @@ function processBatchImport(csvText, userId, ipAddress) {
     `);
 
     const updateRecordStmt = db.prepare(`
-      UPDATE import_records SET patient_id = ?, queue_record_id = ? WHERE id = ?
+      UPDATE import_records 
+      SET status = 'enqueued', patient_id = ?, queue_record_id = ?, 
+          error_code = NULL, error_message = NULL
+      WHERE id = ?
     `);
 
-    for (const result of allResults) {
-      const r = result.record;
-      const isSuccess = result.success;
-      const errorCode = isSuccess ? null : result.errors[0].code;
-      const errorMessage = isSuccess ? null : result.errors.map(e => e.message).join('; ');
+    const failRecordStmt = db.prepare(`
+      UPDATE import_records 
+      SET status = 'failed'
+      WHERE id = ?
+    `);
 
-      const recordResult = recordStmt.run(
-        batchId, r._rowIndex, r.id_card, r.name, r.phone || null,
-        r._gender || r.gender || null, r._age || r.age || null,
-        r._departmentId || null, r._departmentName || r.department || null,
-        r.queue_date, r._type || r.type,
-        isSuccess ? 'success' : 'failed',
-        errorCode, errorMessage
+    let actualSuccessCount = 0;
+    let actualFailCount = 0;
+
+    for (const dr of draftRecords) {
+      if (dr.status !== 'draft_success') {
+        failRecordStmt.run(dr.id);
+        actualFailCount++;
+        continue;
+      }
+
+      const patientKey = `${dr.id_card}|${dr.department_id}|${dr.queue_date}`;
+      if (registeredPatients.has(patientKey)) {
+        failRecordStmt.run(dr.id);
+        actualFailCount++;
+        continue;
+      }
+
+      const existingRegistration = db.prepare(`
+        SELECT COUNT(*) as count FROM queue_records 
+        WHERE patient_id IN (SELECT id FROM patients WHERE id_card = ?)
+          AND department_id = ? 
+          AND queue_date = ? 
+          AND status NOT IN ('returned')
+      `).get(dr.id_card, dr.department_id, dr.queue_date);
+
+      if (existingRegistration.count > 0) {
+        failRecordStmt.run(dr.id);
+        actualFailCount++;
+        continue;
+      }
+
+      const slotKey = `${dr.department_id}|${dr.queue_date}`;
+      const walkinKey = `${dr.department_id}|${dr.queue_date}|walkin`;
+      
+      const slot = db.prepare('SELECT * FROM daily_slots WHERE department_id = ? AND date = ?').get(dr.department_id, dr.queue_date);
+      const currentTotal = db.prepare("SELECT COUNT(*) as count FROM queue_records WHERE department_id = ? AND queue_date = ? AND status NOT IN ('returned')").get(dr.department_id, dr.queue_date).count + (slotUsage.get(slotKey) || 0);
+      const currentWalkin = db.prepare("SELECT COUNT(*) as count FROM queue_records WHERE department_id = ? AND queue_date = ? AND type = ? AND status NOT IN ('returned')").get(dr.department_id, dr.queue_date, 'walkin').count + (walkinUsage.get(walkinKey) || 0);
+
+      if (isDepartmentClosed(dr.department_id, dr.queue_date)) {
+        failRecordStmt.run(dr.id);
+        actualFailCount++;
+        continue;
+      }
+
+      if (!slot) {
+        failRecordStmt.run(dr.id);
+        actualFailCount++;
+        continue;
+      }
+
+      if (currentTotal >= slot.total_slots) {
+        failRecordStmt.run(dr.id);
+        actualFailCount++;
+        continue;
+      }
+
+      if (dr.type === 'walkin' && currentWalkin >= slot.walkin_limit) {
+        failRecordStmt.run(dr.id);
+        actualFailCount++;
+        continue;
+      }
+
+      patientStmt.run(dr.name, dr.id_card, dr.phone || null, dr.gender || null, dr.age || null);
+      const patient = getPatientStmt.get(dr.id_card);
+      
+      const queueNumber = getNextQueueNumber(dr.department_id, dr.queue_date);
+      const queueResult = queueStmt.run(
+        patient.id, dr.department_id, dr.queue_date, queueNumber, dr.type,
+        batchId, dr.id
       );
 
-      if (isSuccess) {
-        const importRecordId = recordResult.lastInsertRowid;
-        
-        patientStmt.run(r.name, r.id_card, r.phone || null, r._gender || r.gender || null, r._age || r.age || null);
-        const patient = getPatientStmt.get(r.id_card);
-        
-        const queueNumber = getNextQueueNumber(r._departmentId, r.queue_date);
-        const queueResult = queueStmt.run(
-          patient.id, r._departmentId, r.queue_date, queueNumber, r._type,
-          batchId, importRecordId
-        );
+      updateRecordStmt.run(patient.id, queueResult.lastInsertRowid, dr.id);
 
-        updateRecordStmt.run(patient.id, queueResult.lastInsertRowid, importRecordId);
-
-        logAudit(userId, 'register_queue', 'queue_record', queueResult.lastInsertRowid, {
-          patient_id: patient.id,
-          patient_name: r.name,
-          department_id: r._departmentId,
-          department_name: r._departmentName,
-          type: r._type,
-          queue_number: queueNumber,
-          batch_no: batchNo,
-          import_row: r._rowIndex
-        }, ipAddress);
+      slotUsage.set(slotKey, (slotUsage.get(slotKey) || 0) + 1);
+      if (dr.type === 'walkin') {
+        walkinUsage.set(walkinKey, (walkinUsage.get(walkinKey) || 0) + 1);
       }
+      registeredPatients.add(patientKey);
+
+      actualSuccessCount++;
+
+      logAudit(userId, 'register_queue', 'queue_record', queueResult.lastInsertRowid, {
+        patient_id: patient.id,
+        patient_name: dr.name,
+        department_id: dr.department_id,
+        department_name: dr.department_name,
+        type: dr.type,
+        queue_number: queueNumber,
+        batch_no: batch.batch_no,
+        import_row: dr.row_index
+      }, ipAddress);
     }
 
-    logAudit(userId, 'import_batch', 'import_batch', batchId, {
-      batch_no: batchNo,
-      total_count: allResults.length,
-      success_count: successRecords.length,
-      fail_count: failRecords.length
+    db.prepare(`
+      UPDATE import_batches 
+      SET status = 'completed', success_count = ?, fail_count = ?, 
+          confirmed_by = ?, confirmed_at = ?
+      WHERE id = ?
+    `).run(actualSuccessCount, actualFailCount, userId, new Date().toISOString(), batchId);
+
+    logAudit(userId, 'confirm_batch', 'import_batch', batchId, {
+      batch_no: batch.batch_no,
+      total_count: batch.total_count,
+      success_count: actualSuccessCount,
+      fail_count: actualFailCount
     }, ipAddress);
 
-    return { batchId, batchNo };
+    return { actualSuccessCount, actualFailCount };
   });
 
   try {
-    const { batchId, batchNo } = insertTransaction();
+    const { actualSuccessCount, actualFailCount } = confirmTransaction();
     return {
       success: true,
       batch_id: batchId,
-      batch_no: batchNo,
-      total_count: allResults.length,
-      success_count: successRecords.length,
-      fail_count: failRecords.length,
-      details: {
-        success: successRecords.map(r => ({
-          row: r.rowIndex,
-          id_card: r.record.id_card,
-          name: r.record.name,
-          department: r.record._departmentName,
-          queue_date: r.record.queue_date,
-          type: r.record._type
-        })),
-        failed: failRecords.map(r => ({
-          row: r.rowIndex,
-          id_card: r.record.id_card,
-          name: r.record.name,
-          department: r.record._departmentName || r.record.department,
-          queue_date: r.record.queue_date,
-          type: r.record._type || r.record.type,
-          errors: r.errors
-        }))
-      }
+      batch_no: batch.batch_no,
+      status: 'completed',
+      total_count: batch.total_count,
+      success_count: actualSuccessCount,
+      fail_count: actualFailCount
     };
   } catch (err) {
     return {
       success: false,
-      error: '导入失败：' + err.message,
+      error: '确认导入失败：' + err.message,
       errorCode: ERROR_CODES.INTERNAL_ERROR
     };
   }
+}
+
+function processBatchImport(csvText, userId, ipAddress) {
+  const precheckResult = precheckBatch(csvText, userId, ipAddress);
+  if (!precheckResult.success) {
+    return precheckResult;
+  }
+  return confirmBatch(precheckResult.batch_id, userId, ipAddress);
 }
 
 function revokeBatch(batchId, userId, ipAddress, reason) {
@@ -443,6 +585,40 @@ function revokeBatch(batchId, userId, ipAddress, reason) {
 
   if (batch.status === 'revoked') {
     return { success: false, error: '该批次已撤销' };
+  }
+
+  if (batch.status === 'draft') {
+    const revokeTransaction = db.transaction(() => {
+      db.prepare(`
+        UPDATE import_batches 
+        SET status = 'revoked', revoked_by = ?, revoked_at = ?, revoke_reason = ?
+        WHERE id = ?
+      `).run(userId, new Date().toISOString(), reason || '草稿撤销', batchId);
+
+      db.prepare(`
+        UPDATE import_records SET status = 'failed', error_code = 'BATCH_REVOKED', error_message = '草稿批次已撤销'
+        WHERE batch_id = ? AND status IN ('draft_success', 'draft_failed')
+      `).run(batchId);
+
+      logAudit(userId, 'revoke_batch', 'import_batch', batchId, {
+        batch_no: batch.batch_no,
+        reason: reason || '草稿撤销',
+        was_draft: true
+      }, ipAddress);
+
+      return 0;
+    });
+
+    try {
+      const count = revokeTransaction();
+      return {
+        success: true,
+        message: `草稿已撤销`,
+        revoked_count: count
+      };
+    } catch (err) {
+      return { success: false, error: '撤销失败：' + err.message };
+    }
   }
 
   const nonWaitingRecords = db.prepare(`
@@ -483,7 +659,7 @@ function revokeBatch(batchId, userId, ipAddress, reason) {
 
     db.prepare(`
       UPDATE import_records SET status = 'failed', error_code = 'BATCH_REVOKED', error_message = '批次已撤销'
-      WHERE batch_id = ? AND status = 'success'
+      WHERE batch_id = ? AND status = 'enqueued'
     `).run(batchId);
 
     logAudit(userId, 'revoke_batch', 'import_batch', batchId, {
@@ -519,14 +695,26 @@ function generateBatchCSV(batchId) {
   `).all(batchId);
 
   const headers = ['行号', '身份证号', '姓名', '手机号', '性别', '年龄', 
-                   '科室', '挂号日期', '挂号类型', '状态', '错误代码', '错误信息'];
-  const statusMap = { pending: '待处理', success: '成功', failed: '失败' };
+                   '科室', '挂号日期', '挂号类型', '状态', '是否覆盖', '覆盖提示', '错误代码', '错误信息'];
+  
+  const statusMap = { 
+    draft_success: '预检通过', 
+    draft_failed: '预检失败', 
+    pending: '待处理', 
+    success: '成功', 
+    failed: '失败', 
+    enqueued: '已入队' 
+  };
+  
   const typeMap = { appointment: '预约', walkin: '现场' };
 
   const rows = records.map(r => [
     r.row_index, r.id_card, r.name, r.phone || '', r.gender || '', r.age || '',
     r.department_name || '', r.queue_date, typeMap[r.type] || r.type,
-    statusMap[r.status] || r.status, r.error_code || '', r.error_message || ''
+    statusMap[r.status] || r.status,
+    r.is_overwrite ? '是' : '否',
+    r.overwrite_hint || '',
+    r.error_code || '', r.error_message || ''
   ]);
 
   return [headers, ...rows].map(row => row.map(escapeCSV).join(',')).join('\n');
@@ -542,11 +730,13 @@ function escapeCSV(value) {
 }
 
 module.exports = {
+  precheckBatch,
+  confirmBatch,
   processBatchImport,
   revokeBatch,
   generateBatchCSV,
   parseCSV,
   validateBatch,
-  checkDatabaseConflicts,
+  checkDatabaseConflictsPrecheck,
   ERROR_CODES
 };

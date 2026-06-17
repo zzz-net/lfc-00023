@@ -118,13 +118,16 @@ CREATE TABLE IF NOT EXISTS import_batches (
   total_count INTEGER NOT NULL DEFAULT 0,
   success_count INTEGER NOT NULL DEFAULT 0,
   fail_count INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed', 'revoked')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('draft', 'pending', 'processing', 'completed', 'failed', 'revoked')),
   imported_by INTEGER NOT NULL,
   imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  confirmed_by INTEGER,
+  confirmed_at DATETIME,
   revoked_by INTEGER,
   revoked_at DATETIME,
   revoke_reason TEXT,
   FOREIGN KEY (imported_by) REFERENCES users(id),
+  FOREIGN KEY (confirmed_by) REFERENCES users(id),
   FOREIGN KEY (revoked_by) REFERENCES users(id)
 );
 
@@ -141,9 +144,11 @@ CREATE TABLE IF NOT EXISTS import_records (
   department_name TEXT,
   queue_date TEXT NOT NULL,
   type TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'success', 'failed')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('draft_success', 'draft_failed', 'pending', 'success', 'failed', 'enqueued')),
   error_code TEXT,
   error_message TEXT,
+  is_overwrite INTEGER DEFAULT 0,
+  overwrite_hint TEXT,
   patient_id INTEGER,
   queue_record_id INTEGER,
   FOREIGN KEY (batch_id) REFERENCES import_batches(id) ON DELETE CASCADE,
@@ -172,5 +177,23 @@ if (!existingColumns.includes('batch_id')) {
   `);
 }
 db.exec("CREATE INDEX IF NOT EXISTS idx_queue_batch ON queue_records(batch_id);");
+
+const batchPragma = db.prepare("PRAGMA table_info(import_batches)").all();
+const batchColumns = batchPragma.map(c => c.name);
+if (!batchColumns.includes('confirmed_by')) {
+  db.exec(`
+    ALTER TABLE import_batches ADD COLUMN confirmed_by INTEGER REFERENCES users(id);
+    ALTER TABLE import_batches ADD COLUMN confirmed_at DATETIME;
+  `);
+}
+
+const recordPragma = db.prepare("PRAGMA table_info(import_records)").all();
+const recordColumns = recordPragma.map(c => c.name);
+if (!recordColumns.includes('is_overwrite')) {
+  db.exec(`
+    ALTER TABLE import_records ADD COLUMN is_overwrite INTEGER DEFAULT 0;
+    ALTER TABLE import_records ADD COLUMN overwrite_hint TEXT;
+  `);
+}
 
 console.log('数据库初始化完成');

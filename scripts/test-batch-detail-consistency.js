@@ -54,12 +54,8 @@ async function ensureSlots(adminHeaders, today) {
 async function main() {
   const today = new Date().toISOString().split('T')[0];
   const runId = Date.now().toString().slice(-4); // 每次运行唯一后缀(4位)
-  // 身份证格式: 110101 + 1988(年) + 12(月) + 01-31(日，用runId末2位) + 序号(3位) + X(校验位占位)
-  // 注意：身份证第18位是校验码，这里用18位占位值，导入若校验严格就可能失败。
-  // 为稳妥起见，用真实合法的区间（batchImport.js里只校验长度18，不校验末位码）
-  const dayPart = String(parseInt(runId.slice(-2)) % 28 + 1).padStart(2, '0'); // 01-28，合法日
-  const idPrefix = `110101198812${dayPart}`; // 生日=1988-12-XX，月日合法
-  function idc(base) { return idPrefix + String(base).padStart(4, '0').slice(-4); } // 补4位 → 18位
+  const idPrefix = `1101011988${runId}`;
+  function idc(base) { return idPrefix + String(base).padStart(4, '0').slice(-4); }
   console.log(`=== 批次详情状态显示 - 三处一致性回归测试 (${today}, runId=${runId}, idPrefix=${idPrefix}) ===\n`);
 
   const nurseLogin = await request('/auth/login', {

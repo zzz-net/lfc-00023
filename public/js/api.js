@@ -66,6 +66,8 @@ const api = {
     deleteClosedPeriod: (id) => request(`/admin/closed-periods/${id}`, { method: 'DELETE' }),
     getUsers: () => request('/admin/users'),
     createUser: (data) => request('/admin/users', { method: 'POST', body: JSON.stringify(data) }),
+    batchPrecheck: (csvText) => request('/admin/batch/precheck', { method: 'POST', body: JSON.stringify({ csv_text: csvText }) }),
+    batchConfirm: (batchId) => request('/admin/batch/confirm', { method: 'POST', body: JSON.stringify({ batch_id: batchId }) }),
     batchImport: (csvText) => request('/admin/batch/import', { method: 'POST', body: JSON.stringify({ csv_text: csvText }) }),
     getBatches: (params = {}) => {
       const qs = new URLSearchParams(params).toString();
@@ -73,6 +75,13 @@ const api = {
     },
     getBatchDetail: (id) => request(`/admin/batches/${id}`),
     exportBatchCSV: (id) => `/api/admin/batches/${id}/csv`,
+    fetchBatchCSV: async (id) => {
+      const headers = {};
+      const token = getToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`/api/admin/batches/${id}/csv`, { headers });
+      return res.text();
+    },
     revokeBatch: (id, reason) => request(`/admin/batches/${id}/revoke`, { method: 'POST', body: JSON.stringify({ reason }) }),
   },
 
@@ -85,6 +94,8 @@ const api = {
     missPatient: (id) => request(`/nurse/queue/miss/${id}`, { method: 'POST' }),
     returnQueue: (id, reason) => request(`/nurse/queue/return/${id}`, { method: 'POST', body: JSON.stringify({ reason }) }),
     getQueueStats: (deptId, date) => request(`/nurse/queue/stats/${deptId}${date ? `?date=${date}` : ''}`),
+    batchPrecheck: (csvText) => request('/nurse/batch/precheck', { method: 'POST', body: JSON.stringify({ csv_text: csvText }) }),
+    batchConfirm: (batchId) => request('/nurse/batch/confirm', { method: 'POST', body: JSON.stringify({ batch_id: batchId }) }),
     batchImport: (csvText) => request('/nurse/batch/import', { method: 'POST', body: JSON.stringify({ csv_text: csvText }) }),
     getBatches: (params = {}) => {
       const qs = new URLSearchParams(params).toString();
@@ -92,6 +103,13 @@ const api = {
     },
     getBatchDetail: (id) => request(`/nurse/batches/${id}`),
     exportBatchCSV: (id) => `/api/nurse/batches/${id}/csv`,
+    fetchBatchCSV: async (id) => {
+      const headers = {};
+      const token = getToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`/api/nurse/batches/${id}/csv`, { headers });
+      return res.text();
+    },
     revokeBatch: (id, reason) => request(`/nurse/batches/${id}/revoke`, { method: 'POST', body: JSON.stringify({ reason }) }),
   },
 

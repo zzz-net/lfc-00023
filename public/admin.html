@@ -260,14 +260,18 @@
         </div>
         <div class="form-row">
           <div class="form-group" style="align-self: flex-end;">
-            <button class="btn btn-primary" onclick="submitBatchImportAdmin()">开始导入</button>
+            <button class="btn btn-primary" onclick="submitBatchPrecheckAdmin()">开始预检</button>
           </div>
         </div>
       </div>
 
       <div id="importResultAdmin" class="card" style="display: none;">
-        <h2>导入结果</h2>
+        <h2>预检结果</h2>
         <div id="importResultContentAdmin"></div>
+        <div id="confirmImportSectionAdmin" style="display: none; margin-top: 20px; text-align: right;">
+          <button class="btn btn-default" onclick="clearPrecheckResultAdmin()">取消</button>
+          <button class="btn btn-success" onclick="confirmBatchImportAdmin()">确认导入</button>
+        </div>
       </div>
     </div>
 
@@ -313,7 +317,7 @@
           <thead>
             <tr>
               <th>行号</th><th>身份证号</th><th>姓名</th><th>科室</th>
-              <th>日期</th><th>类型</th><th>状态</th><th>错误信息</th>
+              <th>日期</th><th>类型</th><th>状态</th><th>是否覆盖</th><th>覆盖提示</th><th>错误信息</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -341,6 +345,7 @@
   <script>
     let currentUser = getUser();
     let currentBatchIdAdmin = null;
+    let currentPrecheckBatchIdAdmin = null;
     if (!currentUser || currentUser.role !== 'admin') window.location.href = 'login.html';
     document.getElementById('userInfo').textContent = `${currentUser.name} (管理员)`;
     document.getElementById('slotDate').value = new Date().toISOString().split('T')[0];
@@ -582,20 +587,45 @@
       link.click();
     }
 
-    async function submitBatchImportAdmin() {
+    async function submitBatchPrecheckAdmin() {
       const csvText = document.getElementById('csvTextAdmin').value.trim();
       if (!csvText) return showAlert('请上传CSV文件或粘贴CSV内容', 'error');
 
       try {
-        const result = await api.admin.batchImport(csvText);
-        showAlert(`导入完成：成功${result.success_count}条，失败${result.fail_count}条`);
+        const result = await api.admin.batchPrecheck(csvText);
+        currentPrecheckBatchIdAdmin = result.batch_id;
+        showAlert(`预检完成：可导入${result.success_count}条，将失败${result.fail_count}条`);
         renderImportResultAdmin(result);
+        document.getElementById('confirmImportSectionAdmin').style.display = 'block';
       } catch (e) {
         showAlert(e.message, 'error');
-        if (e.message && e.details) {
+        if (e.details) {
           renderImportResultAdmin({ success: false, error: e.message, details: e.details });
         }
       }
+    }
+
+    async function confirmBatchImportAdmin() {
+      if (!currentPrecheckBatchIdAdmin) return;
+      
+      if (!confirm('确认导入？确认后将生成正式批次并写入排队记录。')) return;
+
+      try {
+        const result = await api.admin.batchConfirm(currentPrecheckBatchIdAdmin);
+        showAlert(`导入完成：成功${result.success_count}条，失败${result.fail_count}条`);
+        document.getElementById('confirmImportSectionAdmin').style.display = 'none';
+        currentPrecheckBatchIdAdmin = null;
+        loadBatchesAdmin();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    function clearPrecheckResultAdmin() {
+      currentPrecheckBatchIdAdmin = null;
+      document.getElementById('importResultAdmin').style.display = 'none';
+      document.getElementById('confirmImportSectionAdmin').style.display = 'none';
+      document.getElementById('csvTextAdmin').value = '';
     }
 
     function renderImportResultAdmin(result) {
@@ -604,12 +634,31 @@
       
       let html = `<div class="stats-grid" style="margin-bottom: 20px;">
         <div class="stat-card"><div class="number">${result.total_count || 0}</div><div class="label">总计</div></div>
-        <div class="stat-card green"><div class="number">${result.success_count || 0}</div><div class="label">成功</div></div>
-        <div class="stat-card red"><div class="number">${result.fail_count || 0}</div><div class="label">失败</div></div>
+        <div class="stat-card green"><div class="number">${result.success_count || 0}</div><div class="label">可导入</div></div>
+        <div class="stat-card red"><div class="number">${result.fail_count || 0}</div><div class="label">将失败</div></div>
       </div>`;
 
+      if (result.details && result.details.success && result.details.success.length > 0) {
+        html += `<h3>可导入明细</h3>
+        <table style="width: 100%; margin-top: 10px;">
+          <thead><tr><th>行号</th><th>身份证号</th><th>姓名</th><th>科室</th><th>日期</th><th>类型</th><th>覆盖提示</th></tr></thead>
+          <tbody>`;
+        result.details.success.forEach(r => {
+          html += `<tr>
+            <td>${r.row}</td>
+            <td>${r.id_card}</td>
+            <td>${r.name}</td>
+            <td>${r.department}</td>
+            <td>${r.queue_date}</td>
+            <td>${r.type === 'walkin' ? '现场' : '预约'}</td>
+            <td class="${r.is_overwrite ? 'text-orange' : 'text-green'}">${r.overwrite_hint || (r.is_overwrite ? '将覆盖已存在记录' : '无冲突')}</td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+      }
+
       if (result.details && result.details.failed && result.details.failed.length > 0) {
-        html += `<h3>失败明细</h3>
+        html += `<h3 style="margin-top: 20px;">将失败明细</h3>
         <table style="width: 100%; margin-top: 10px;">
           <thead><tr><th>行号</th><th>身份证号</th><th>姓名</th><th>错误信息</th></tr></thead>
           <tbody>`;
@@ -640,11 +689,11 @@
       
       const data = await api.admin.getBatches({ date, department_id: deptId });
       const statusMap = {
-        pending: '待处理', processing: '处理中', completed: '已完成',
+        draft: '草稿', pending: '待处理', processing: '处理中', completed: '已完成',
         failed: '失败', revoked: '已撤销'
       };
       const statusClass = {
-        pending: 'status-waiting', processing: 'status-called', completed: 'status-consulting',
+        draft: 'status-waiting', pending: 'status-waiting', processing: 'status-called', completed: 'status-consulting',
         failed: 'status-missed', revoked: 'status-returned'
       };
 
@@ -658,11 +707,39 @@
           <td>${b.fail_count}</td>
           <td><span class="status-badge ${statusClass[b.status]}">${statusMap[b.status]}</span></td>
           <td>
+            ${b.status === 'draft' ? 
+              `<button class="btn btn-sm btn-success" onclick="confirmBatchImportDirectAdmin(${b.id})">确认导入</button> ` : ''}
             ${b.status === 'completed' && b.success_count > 0 ? 
               `<button class="btn btn-sm btn-danger" onclick="showRevokeModalForBatchAdmin(${b.id})">撤销</button>` : ''}
+            ${b.status === 'draft' ? 
+              `<button class="btn btn-sm btn-danger" onclick="revokeBatchDirectAdmin(${b.id})">撤销</button>` : ''}
           </td>
         </tr>
       `).join('');
+    }
+
+    async function confirmBatchImportDirectAdmin(batchId) {
+      if (!confirm('确认导入该草稿批次？确认后将生成正式批次并写入排队记录。')) return;
+      
+      try {
+        const result = await api.admin.batchConfirm(batchId);
+        showAlert(`导入完成：成功${result.success_count}条，失败${result.fail_count}条`);
+        loadBatchesAdmin();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    async function revokeBatchDirectAdmin(batchId) {
+      if (!confirm('确认撤销该草稿批次？撤销后不可恢复。')) return;
+      
+      try {
+        const result = await api.admin.revokeBatch(batchId, '草稿撤销');
+        showAlert(result.message);
+        loadBatchesAdmin();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
     }
 
     async function viewBatchDetailAdmin(id) {
@@ -670,13 +747,27 @@
       const batch = await api.admin.getBatchDetail(id);
       document.getElementById('batchDetailTitleAdmin').textContent = `批次详情 - ${batch.batch_no}`;
       
-      const importStatusMap = { pending: '待处理', success: '成功', failed: '失败' };
+      const importStatusMap = { 
+        draft_success: '预检通过', 
+        draft_failed: '预检失败', 
+        pending: '待处理', 
+        success: '成功', 
+        failed: '失败',
+        enqueued: '已入队'
+      };
       const queueStatusMap = {
         waiting: '等待中', called: '已叫号', missed: '过号',
         consulting: '就诊中', completed: '已完成', returned: '已退回'
       };
       const typeMap = { appointment: '预约', walkin: '现场' };
-      const importStatusClass = { success: 'status-consulting', failed: 'status-missed', pending: 'status-waiting' };
+      const importStatusClass = { 
+        draft_success: 'status-consulting',
+        draft_failed: 'status-missed',
+        success: 'status-consulting', 
+        failed: 'status-missed', 
+        pending: 'status-waiting',
+        enqueued: 'status-consulting'
+      };
       const queueStatusClass = {
         waiting: 'status-waiting', called: 'status-called', missed: 'status-missed',
         consulting: 'status-consulting', completed: 'status-completed', returned: 'status-returned'
@@ -697,6 +788,8 @@
           <td>${r.queue_date}</td>
           <td>${typeMap[r.type] || r.type}</td>
           <td><span class="status-badge ${displayClass}">${displayStatus}</span></td>
+          <td>${r.is_overwrite ? '是' : '否'}</td>
+          <td>${r.overwrite_hint || '-'}</td>
           <td class="text-red">${r.error_message || '-'}</td>
         </tr>`;
       }).join('');

@@ -85,10 +85,10 @@ router.get('/queue/display/:department_id', (req, res) => {
 });
 
 router.get('/audit-logs', (req, res) => {
-  const { page = 1, pageSize = 50, action, user_id, start_date, end_date } = req.query;
+  const { page = 1, pageSize = 50, action, user_id, start_date, end_date, target_type, resource_type, target_id, resource_id } = req.query;
   
   let sql = `
-    SELECT al.*, u.name as user_name
+    SELECT al.*, al.target_type as resource_type, al.target_id as resource_id, u.name as user_name
     FROM audit_logs al
     LEFT JOIN users u ON al.user_id = u.id
     WHERE 1=1
@@ -111,6 +111,16 @@ router.get('/audit-logs', (req, res) => {
     sql += ' AND DATE(al.created_at) <= ?';
     params.push(end_date);
   }
+  const targetType = target_type || resource_type;
+  if (targetType) {
+    sql += ' AND al.target_type = ?';
+    params.push(targetType);
+  }
+  const targetId = target_id || resource_id;
+  if (targetId) {
+    sql += ' AND al.target_id = ?';
+    params.push(targetId);
+  }
   
   sql += ' ORDER BY al.created_at DESC LIMIT ? OFFSET ?';
   params.push(parseInt(pageSize), (parseInt(page) - 1) * parseInt(pageSize));
@@ -131,6 +141,8 @@ router.get('/audit-logs', (req, res) => {
   if (user_id) { countParams.push(user_id); countSql += ' AND al.user_id = ?'; }
   if (start_date) { countParams.push(start_date); countSql += ' AND DATE(al.created_at) >= ?'; }
   if (end_date) { countParams.push(end_date); countSql += ' AND DATE(al.created_at) <= ?'; }
+  if (targetType) { countParams.push(targetType); countSql += ' AND al.target_type = ?'; }
+  if (targetId) { countParams.push(targetId); countSql += ' AND al.target_id = ?'; }
   
   const { total } = db.prepare(countSql).get(...countParams);
   

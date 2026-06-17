@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { logAudit } = require('../utils/audit');
 const { checkCanRegister, getNextQueueNumber, getTodayQueueCount } = require('../utils/queue');
-const { processBatchImport, revokeBatch, generateBatchCSV } = require('../utils/batchImport');
+const { precheckBatch, confirmBatch, revokeBatch, generateBatchCSV } = require('../utils/batchImport');
 
 const router = express.Router();
 
@@ -320,14 +320,14 @@ router.get('/queue/stats/:department_id', (req, res) => {
   res.json(result);
 });
 
-router.post('/batch/import', (req, res) => {
+router.post('/batch/precheck', (req, res) => {
   const { csv_text } = req.body;
   
   if (!csv_text) {
     return res.status(400).json({ error: 'CSV内容不能为空' });
   }
 
-  const result = processBatchImport(csv_text, req.user.id, req.ip);
+  const result = precheckBatch(csv_text, req.user.id, req.ip);
   
   if (!result.success) {
     return res.status(400).json(result);
@@ -336,19 +336,70 @@ router.post('/batch/import', (req, res) => {
   res.json(result);
 });
 
+router.post('/batch/confirm', (req, res) => {
+  const { batch_id } = req.body;
+  
+  if (!batch_id) {
+    return res.status(400).json({ error: '批次ID不能为空' });
+  }
+
+  const batch = db.prepare('SELECT * FROM import_batches WHERE id = ?').get(batch_id);
+  if (!batch) {
+    return res.status(404).json({ error: '批次不存在' });
+  }
+
+  if (batch.imported_by !== req.user.id) {
+    return res.status(403).json({ error: '只能确认自己发起的批次' });
+  }
+
+  const result = confirmBatch(parseInt(batch_id), req.user.id, req.ip);
+  
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  
+  res.json(result);
+});
+
+router.post('/batch/import', (req, res) => {
+  const { csv_text } = req.body;
+  
+  if (!csv_text) {
+    return res.status(400).json({ error: 'CSV内容不能为空' });
+  }
+
+  const precheckResult = precheckBatch(csv_text, req.user.id, req.ip);
+  
+  if (!precheckResult.success) {
+    return res.status(400).json(precheckResult);
+  }
+
+  const confirmResult = confirmBatch(precheckResult.batch_id, req.user.id, req.ip);
+  
+  if (!confirmResult.success) {
+    return res.status(400).json(confirmResult);
+  }
+  
+  res.json(confirmResult);
+});
+
 router.get('/batches', (req, res) => {
   const { date, department_id, page = 1, pageSize = 20 } = req.query;
   
   let sql = `
-    SELECT b.*, u.name as imported_by_name, u2.name as revoked_by_name,
+    SELECT b.*, u.name as imported_by_name, u2.name as revoked_by_name, u3.name as confirmed_by_name,
            COUNT(ir.id) as record_count
     FROM import_batches b
     LEFT JOIN users u ON b.imported_by = u.id
     LEFT JOIN users u2 ON b.revoked_by = u2.id
+    LEFT JOIN users u3 ON b.confirmed_by = u3.id
     LEFT JOIN import_records ir ON b.id = ir.batch_id
     WHERE 1=1
   `;
   const params = [];
+  
+  sql += ' AND b.imported_by = ?';
+  params.push(req.user.id);
   
   if (date) {
     sql += ' AND DATE(b.imported_at) = ?';
@@ -372,8 +423,8 @@ router.get('/batches', (req, res) => {
   
   const batches = db.prepare(sql).all(...params);
   
-  let countSql = `SELECT COUNT(*) as total FROM import_batches b WHERE 1=1`;
-  const countParams = [];
+  let countSql = `SELECT COUNT(*) as total FROM import_batches b WHERE 1=1 AND b.imported_by = ?`;
+  const countParams = [req.user.id];
   if (date) { countParams.push(date); countSql += ' AND DATE(b.imported_at) = ?'; }
   if (department_id) { 
     countParams.push(department_id);
@@ -392,15 +443,20 @@ router.get('/batches/:id', (req, res) => {
   const { id } = req.params;
   
   const batch = db.prepare(`
-    SELECT b.*, u.name as imported_by_name, u2.name as revoked_by_name
+    SELECT b.*, u.name as imported_by_name, u2.name as revoked_by_name, u3.name as confirmed_by_name
     FROM import_batches b
     LEFT JOIN users u ON b.imported_by = u.id
     LEFT JOIN users u2 ON b.revoked_by = u2.id
+    LEFT JOIN users u3 ON b.confirmed_by = u3.id
     WHERE b.id = ?
   `).get(id);
   
   if (!batch) {
     return res.status(404).json({ error: '批次不存在' });
+  }
+
+  if (batch.imported_by !== req.user.id) {
+    return res.status(403).json({ error: '只能查看自己发起的批次' });
   }
   
   const records = db.prepare(`
@@ -424,6 +480,10 @@ router.get('/batches/:id/csv', (req, res) => {
   if (!batch) {
     return res.status(404).json({ error: '批次不存在' });
   }
+
+  if (batch.imported_by !== req.user.id) {
+    return res.status(403).json({ error: '只能导出自己发起的批次' });
+  }
   
   const csv = generateBatchCSV(id);
   
@@ -435,6 +495,15 @@ router.get('/batches/:id/csv', (req, res) => {
 router.post('/batches/:id/revoke', (req, res) => {
   const { id } = req.params;
   const { reason } = req.body;
+  
+  const batch = db.prepare('SELECT * FROM import_batches WHERE id = ?').get(id);
+  if (!batch) {
+    return res.status(404).json({ error: '批次不存在' });
+  }
+
+  if (batch.imported_by !== req.user.id) {
+    return res.status(403).json({ error: '只能撤销自己发起的批次' });
+  }
   
   const result = revokeBatch(parseInt(id), req.user.id, req.ip, reason);
   
