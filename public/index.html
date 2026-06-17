@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>门诊分诊排队与叫号系统</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="card" style="text-align: center; margin-top: 50px;">
+      <h1 style="color: #096dd9; margin-bottom: 30px;">门诊分诊排队与叫号系统</h1>
+      <p style="margin-bottom: 30px; color: #666;">请选择您的身份登录</p>
+      <div style="display: flex; gap: 20px; justify-content: center; flex-wrap: wrap;">
+        <a href="login.html?role=admin" class="btn btn-primary" style="padding: 20px 40px; font-size: 18px;">管理员登录</a>
+        <a href="login.html?role=nurse" class="btn btn-success" style="padding: 20px 40px; font-size: 18px;">护士登录</a>
+        <a href="login.html?role=doctor" class="btn btn-warning" style="padding: 20px 40px; font-size: 18px;">医生登录</a>
+      </div>
+      <div style="margin-top: 40px;">
+        <a href="display.html" class="btn btn-default" style="padding: 15px 30px;">查看叫号屏</a>
+      </div>
+      <div style="margin-top: 40px; padding: 20px; background: #f6ffed; border-radius: 8px; text-align: left;">
+        <h3 style="color: #52c41a; margin-bottom: 10px;">测试账号</h3>
+        <p><strong>管理员：</strong>admin / admin123</p>
+        <p><strong>护士：</strong>nurse1 / nurse123 或 nurse2 / nurse123</p>
+        <p><strong>医生：</strong>doctor1 / doctor123 (内科)、doctor2 / doctor123 (外科)、doctor3 / doctor123 (儿科)、doctor4 / doctor123 (妇科)</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

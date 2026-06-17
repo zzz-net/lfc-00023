@@ -1,0 +1,309 @@
+const express = require('express');
+const db = require('../db');
+const { logAudit } = require('../utils/audit');
+const { checkCanRegister, getNextQueueNumber, getTodayQueueCount } = require('../utils/queue');
+
+const router = express.Router();
+
+router.post('/patients', (req, res) => {
+  const { name, id_card, phone, gender, age } = req.body;
+  
+  if (!name || !id_card) {
+    return res.status(400).json({ error: '姓名和身份证号不能为空' });
+  }
+
+  try {
+    let patient = db.prepare('SELECT * FROM patients WHERE id_card = ?').get(id_card);
+    
+    if (!patient) {
+      const stmt = db.prepare(`
+        INSERT INTO patients (name, id_card, phone, gender, age)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const result = stmt.run(name, id_card, phone, gender, age);
+      patient = { id: result.lastInsertRowid, name, id_card, phone, gender, age };
+      
+      logAudit(req.user.id, 'create_patient', 'patient', patient.id, 
+        { name, id_card }, req.ip);
+    }
+    
+    res.json(patient);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/patients/:id_card', (req, res) => {
+  const { id_card } = req.params;
+  const patient = db.prepare('SELECT * FROM patients WHERE id_card = ?').get(id_card);
+  
+  if (!patient) {
+    return res.status(404).json({ error: '患者不存在' });
+  }
+  
+  res.json(patient);
+});
+
+router.post('/queue/register', (req, res) => {
+  const { patient_id, department_id, type } = req.body;
+  
+  if (!patient_id || !department_id || !type) {
+    return res.status(400).json({ error: '患者ID、科室ID和挂号类型不能为空' });
+  }
+
+  if (!['appointment', 'walkin'].includes(type)) {
+    return res.status(400).json({ error: '挂号类型必须是appointment或walkin' });
+  }
+
+  const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(patient_id);
+  if (!patient) {
+    return res.status(404).json({ error: '患者不存在' });
+  }
+
+  const dept = db.prepare('SELECT * FROM departments WHERE id = ? AND is_active = 1').get(department_id);
+  if (!dept) {
+    return res.status(404).json({ error: '科室不存在或未启用' });
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  
+  const existing = db.prepare(`
+    SELECT * FROM queue_records 
+    WHERE patient_id = ? AND department_id = ? AND queue_date = ? AND status NOT IN ('returned')
+  `).get(patient_id, department_id, today);
+  
+  if (existing) {
+    return res.status(400).json({ error: '该患者今日已在此科室挂号' });
+  }
+
+  const checkResult = checkCanRegister(department_id, today, type);
+  if (!checkResult.can) {
+    return res.status(400).json({ error: checkResult.reason });
+  }
+
+  const queueNumber = getNextQueueNumber(department_id, today);
+
+  const stmt = db.prepare(`
+    INSERT INTO queue_records (patient_id, department_id, queue_date, queue_number, type)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  const result = stmt.run(patient_id, department_id, today, queueNumber, type);
+  
+  logAudit(req.user.id, 'register_queue', 'queue_record', result.lastInsertRowid, 
+    { patient_id, patient_name: patient.name, department_id, department_name: dept.name, type, queue_number: queueNumber }, req.ip);
+  
+  const queueRecord = db.prepare(`
+    SELECT qr.*, p.name as patient_name, d.name as department_name
+    FROM queue_records qr
+    JOIN patients p ON qr.patient_id = p.id
+    JOIN departments d ON qr.department_id = d.id
+    WHERE qr.id = ?
+  `).get(result.lastInsertRowid);
+  
+  res.json(queueRecord);
+});
+
+router.get('/queue/:department_id', (req, res) => {
+  const { department_id } = req.params;
+  const { date } = req.query;
+  const queueDate = date || new Date().toISOString().split('T')[0];
+  
+  const queue = db.prepare(`
+    SELECT qr.*, p.name as patient_name, p.id_card, p.phone, d.name as department_name,
+           u.name as called_by_name, u2.name as doctor_name
+    FROM queue_records qr
+    JOIN patients p ON qr.patient_id = p.id
+    JOIN departments d ON qr.department_id = d.id
+    LEFT JOIN users u ON qr.called_by = u.id
+    LEFT JOIN users u2 ON qr.consulting_doctor_id = u2.id
+    WHERE qr.department_id = ? AND qr.queue_date = ?
+    ORDER BY 
+      CASE qr.status 
+        WHEN 'consulting' THEN 1 
+        WHEN 'called' THEN 2 
+        WHEN 'waiting' THEN 3 
+        WHEN 'missed' THEN 4
+        WHEN 'returned' THEN 5
+        ELSE 6 
+      END,
+      qr.queue_number
+  `).all(department_id, queueDate);
+  
+  res.json(queue);
+});
+
+router.post('/queue/call/:id', (req, res) => {
+  const { id } = req.params;
+  
+  const record = db.prepare('SELECT * FROM queue_records WHERE id = ?').get(id);
+  if (!record) {
+    return res.status(404).json({ error: '排队记录不存在' });
+  }
+
+  if (record.status === 'returned') {
+    return res.status(400).json({ error: '该记录已退回，无法叫号' });
+  }
+
+  if (record.status === 'completed') {
+    return res.status(400).json({ error: '该患者已完成就诊' });
+  }
+
+  if (record.status === 'called' || record.status === 'consulting') {
+    return res.status(400).json({ error: '该患者已在叫号或就诊中' });
+  }
+
+  const currentDoctor = db.prepare(`
+    SELECT COUNT(*) as count FROM queue_records 
+    WHERE department_id = ? AND queue_date = ? AND status = 'consulting'
+  `).get(record.department_id, record.queue_date);
+  
+  if (currentDoctor.count > 0) {
+    return res.status(400).json({ error: '当前有患者正在就诊，请先完成当前接诊' });
+  }
+
+  const now = new Date().toISOString();
+  
+  db.prepare(`
+    UPDATE queue_records 
+    SET status = 'called', called_at = ?, called_by = ?
+    WHERE id = ?
+  `).run(now, req.user.id, id);
+  
+  logAudit(req.user.id, 'call_patient', 'queue_record', id, 
+    { queue_number: record.queue_number, previous_status: record.status }, req.ip);
+  
+  const updated = db.prepare(`
+    SELECT qr.*, p.name as patient_name, d.name as department_name
+    FROM queue_records qr
+    JOIN patients p ON qr.patient_id = p.id
+    JOIN departments d ON qr.department_id = d.id
+    WHERE qr.id = ?
+  `).get(id);
+  
+  res.json(updated);
+});
+
+router.post('/queue/miss/:id', (req, res) => {
+  const { id } = req.params;
+  
+  const record = db.prepare('SELECT * FROM queue_records WHERE id = ?').get(id);
+  if (!record) {
+    return res.status(404).json({ error: '排队记录不存在' });
+  }
+
+  if (record.status !== 'called') {
+    return res.status(400).json({ error: '只有已叫号的患者才能过号' });
+  }
+
+  if (record.status === 'missed') {
+    return res.status(400).json({ error: '该患者已经过号，不能重复过号' });
+  }
+
+  db.prepare(`
+    UPDATE queue_records 
+    SET status = 'missed'
+    WHERE id = ?
+  `).run(id);
+  
+  logAudit(req.user.id, 'miss_patient', 'queue_record', id, 
+    { queue_number: record.queue_number }, req.ip);
+  
+  const updated = db.prepare(`
+    SELECT qr.*, p.name as patient_name, d.name as department_name
+    FROM queue_records qr
+    JOIN patients p ON qr.patient_id = p.id
+    JOIN departments d ON qr.department_id = d.id
+    WHERE qr.id = ?
+  `).get(id);
+  
+  res.json(updated);
+});
+
+router.post('/queue/return/:id', (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+  
+  if (!reason) {
+    return res.status(400).json({ error: '退回原因不能为空' });
+  }
+
+  const record = db.prepare('SELECT * FROM queue_records WHERE id = ?').get(id);
+  if (!record) {
+    return res.status(404).json({ error: '排队记录不存在' });
+  }
+
+  if (record.status === 'returned') {
+    return res.status(400).json({ error: '该记录已退回' });
+  }
+
+  if (record.status === 'completed') {
+    return res.status(400).json({ error: '已完成就诊的记录无法退回' });
+  }
+
+  if (record.status === 'consulting') {
+    return res.status(400).json({ error: '正在就诊中的患者无法退回，请先完成或取消接诊' });
+  }
+
+  const now = new Date().toISOString();
+  
+  db.prepare(`
+    UPDATE queue_records 
+    SET status = 'returned', return_reason = ?, returned_by = ?, returned_at = ?
+    WHERE id = ?
+  `).run(reason, req.user.id, now, id);
+  
+  logAudit(req.user.id, 'return_queue', 'queue_record', id, 
+    { queue_number: record.queue_number, reason }, req.ip);
+  
+  const updated = db.prepare(`
+    SELECT qr.*, p.name as patient_name, d.name as department_name,
+           u.name as returned_by_name
+    FROM queue_records qr
+    JOIN patients p ON qr.patient_id = p.id
+    JOIN departments d ON qr.department_id = d.id
+    LEFT JOIN users u ON qr.returned_by = u.id
+    WHERE qr.id = ?
+  `).get(id);
+  
+  res.json(updated);
+});
+
+router.get('/queue/stats/:department_id', (req, res) => {
+  const { department_id } = req.params;
+  const { date } = req.query;
+  const queueDate = date || new Date().toISOString().split('T')[0];
+  
+  const stats = db.prepare(`
+    SELECT 
+      status,
+      COUNT(*) as count
+    FROM queue_records
+    WHERE department_id = ? AND queue_date = ?
+    GROUP BY status
+  `).all(department_id, queueDate);
+  
+  const result = {
+    waiting: 0,
+    called: 0,
+    consulting: 0,
+    completed: 0,
+    missed: 0,
+    returned: 0,
+    total: 0
+  };
+  
+  stats.forEach(s => {
+    result[s.status] = s.count;
+    result.total += s.count;
+  });
+  
+  const slot = db.prepare('SELECT * FROM daily_slots WHERE department_id = ? AND date = ?')
+    .get(department_id, queueDate);
+  
+  result.total_slots = slot ? slot.total_slots : 0;
+  result.available = slot ? Math.max(0, slot.total_slots - result.total + result.returned) : 0;
+  
+  res.json(result);
+});
+
+module.exports = router;

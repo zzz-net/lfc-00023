@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>叫号屏 - 门诊分诊排队系统</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="display-container">
+    <h1 id="deptName">叫号显示屏</h1>
+    
+    <div class="form-row" style="max-width: 400px; margin: 0 auto 30px;">
+      <div class="form-group">
+        <label style="color: white;">选择科室</label>
+        <select id="department" onchange="loadDisplay()" style="color: #333;"></select>
+      </div>
+    </div>
+
+    <div class="display-current">
+      <div style="font-size: 24px; opacity: 0.9;">当前接诊</div>
+      <div class="number" id="currentNumber">--</div>
+      <div class="name" id="currentName">等待中...</div>
+    </div>
+
+    <div style="text-align: center; margin-bottom: 30px;">
+      <div style="font-size: 24px;">上一位叫号</div>
+      <div style="font-size: 48px; margin: 10px 0;" id="lastCalled">-- 号 --</div>
+    </div>
+
+    <div style="font-size: 24px; text-align: center; margin-bottom: 20px;">即将叫号</div>
+    <div class="display-next" id="nextList">
+      <div class="display-next-item">
+        <div class="number">--</div>
+        <div class="name">等待中</div>
+      </div>
+      <div class="display-next-item">
+        <div class="number">--</div>
+        <div class="name">等待中</div>
+      </div>
+      <div class="display-next-item">
+        <div class="number">--</div>
+        <div class="name">等待中</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    async function loadDepartments() {
+      const depts = await api.getDepartments();
+      const sel = document.getElementById('department');
+      sel.innerHTML = depts.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+      loadDisplay();
+    }
+
+    async function loadDisplay() {
+      const deptId = document.getElementById('department').value;
+      const deptName = document.getElementById('department').options[document.getElementById('department').selectedIndex].text;
+      document.getElementById('deptName').textContent = `${deptName} - 叫号显示屏`;
+
+      const data = await api.getQueueDisplay(deptId);
+
+      if (data.current) {
+        document.getElementById('currentNumber').textContent = data.current.queue_number;
+        document.getElementById('currentName').textContent = data.current.patient_name;
+      } else {
+        document.getElementById('currentNumber').textContent = '--';
+        document.getElementById('currentName').textContent = '等待中...';
+      }
+
+      if (data.last_called) {
+        document.getElementById('lastCalled').textContent = `${data.last_called.queue_number} 号 ${data.last_called.patient_name}`;
+      } else {
+        document.getElementById('lastCalled').textContent = '-- 号 --';
+      }
+
+      const nextHtml = data.next_waiting.map(n => `
+        <div class="display-next-item">
+          <div class="number">${n.queue_number}</div>
+          <div class="name">${n.patient_name}</div>
+        </div>
+      `).join('');
+
+      const emptyCount = 3 - data.next_waiting.length;
+      for (let i = 0; i < emptyCount; i++) {
+        nextHtml += `
+          <div class="display-next-item">
+            <div class="number">--</div>
+            <div class="name">等待中</div>
+          </div>
+        `;
+      }
+
+      document.getElementById('nextList').innerHTML = nextHtml;
+    }
+
+    loadDepartments();
+    setInterval(loadDisplay, 3000);
+  </script>
+</body>
+</html>

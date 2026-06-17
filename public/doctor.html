@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>医生站 - 门诊分诊排队系统</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="header">
+    <h1>门诊分诊排队系统 - 医生站</h1>
+    <div class="user-info">
+      <span id="userInfo"></span>
+      <a href="#" onclick="logout()">退出登录</a>
+    </div>
+  </div>
+  <div class="container">
+    <div class="card">
+      <h2>当前接诊</h2>
+      <div id="currentPatient" style="text-align: center;">
+        <p style="color: #999;">暂无正在接诊的患者</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>已叫号待接诊</h2>
+      <div id="waitingPatient" style="text-align: center;">
+        <p style="color: #999;">暂无待接诊患者</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>今日排队列表</h2>
+      <table id="queueTable">
+        <thead>
+          <tr><th>序号</th><th>姓名</th><th>性别</th><th>年龄</th><th>身份证号</th><th>类型</th><th>状态</th><th>操作</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>今日接诊记录</h2>
+      <div id="historyTableContainer"></div>
+    </div>
+  </div>
+
+  <div id="consultModal" class="modal">
+    <div class="modal-content">
+      <h3>接诊记录</h3>
+      <div id="consultPatientInfo"></div>
+      <div class="form-group">
+        <label>主诉</label>
+        <textarea id="symptoms" rows="2" style="width: 100%;" placeholder="患者主诉症状"></textarea>
+      </div>
+      <div class="form-group">
+        <label>诊断 *</label>
+        <textarea id="diagnosis" rows="3" style="width: 100%;" placeholder="诊断结果（必填）"></textarea>
+      </div>
+      <div class="form-group">
+        <label>处方</label>
+        <textarea id="prescription" rows="3" style="width: 100%;" placeholder="开具的处方"></textarea>
+      </div>
+      <div class="form-group">
+        <label>备注</label>
+        <textarea id="notes" rows="2" style="width: 100%;" placeholder="其他备注"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeConsultModal()">取消</button>
+        <button class="btn btn-success" onclick="completeConsult()">完成接诊</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert"></div>
+  <script src="/js/api.js"></script>
+  <script>
+    let currentUser = getUser();
+    let currentConsultQueueId = null;
+    if (!currentUser || currentUser.role !== 'doctor') window.location.href = 'login.html';
+    document.getElementById('userInfo').textContent = `${currentUser.name} (医生)`;
+
+    function showAlert(message, type = 'success') {
+      document.getElementById('alert').innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+      setTimeout(() => document.getElementById('alert').innerHTML = '', 3000);
+    }
+
+    async function logout() {
+      await api.logout();
+      clearToken();
+      window.location.href = 'login.html';
+    }
+
+    async function loadCurrent() {
+      const consulting = await api.doctor.getConsulting();
+      const typeMap = { appointment: '预约', walkin: '现场' };
+
+      if (consulting) {
+        document.getElementById('currentPatient').innerHTML = `
+          <div class="queue-number-big">${consulting.queue_number}</div>
+          <div class="patient-name-big">${consulting.patient_name}</div>
+          <p>性别：${consulting.gender || '-'} | 年龄：${consulting.age || '-'}岁 | ${typeMap[consulting.type]}</p>
+          <p style="color: #999;">接诊开始时间：${consulting.consultation_started_at}</p>
+          <button class="btn btn-success" onclick="openConsultModal(${consulting.id}, '${consulting.patient_name}', ${consulting.queue_number})" style="margin-top: 15px;">
+            填写记录并完成接诊
+          </button>
+        `;
+      } else {
+        document.getElementById('currentPatient').innerHTML = '<p style="color: #999;">暂无正在接诊的患者</p>';
+      }
+    }
+
+    async function loadWaiting() {
+      const waiting = await api.doctor.getCurrent();
+      const typeMap = { appointment: '预约', walkin: '现场' };
+
+      if (waiting) {
+        document.getElementById('waitingPatient').innerHTML = `
+          <div class="queue-number-big" style="color: #faad14;">${waiting.queue_number}</div>
+          <div class="patient-name-big">${waiting.patient_name}</div>
+          <p>性别：${waiting.gender || '-'} | 年龄：${waiting.age || '-'}岁 | ${typeMap[waiting.type]}</p>
+          <p style="color: #999;">叫号时间：${waiting.called_at}</p>
+          <button class="btn btn-primary" onclick="startConsult(${waiting.id})" style="margin-top: 15px;">
+            开始接诊
+          </button>
+        `;
+      } else {
+        document.getElementById('waitingPatient').innerHTML = '<p style="color: #999;">暂无待接诊患者</p>';
+      }
+    }
+
+    async function loadQueue() {
+      const queue = await api.doctor.getQueue();
+      const statusMap = { waiting: '等待中', called: '已叫号', consulting: '就诊中' };
+      const typeMap = { appointment: '预约', walkin: '现场' };
+
+      document.querySelector('#queueTable tbody').innerHTML = queue.map(q => `
+        <tr>
+          <td>${q.queue_number}</td>
+          <td>${q.patient_name}</td>
+          <td>${q.gender || '-'}</td>
+          <td>${q.age || '-'}</td>
+          <td>${q.id_card}</td>
+          <td><span class="type-badge type-${q.type}">${typeMap[q.type]}</span></td>
+          <td><span class="status-badge status-${q.status}">${statusMap[q.status]}</span></td>
+          <td>
+            ${q.status === 'called' ? `<button class="btn btn-sm btn-primary" onclick="startConsult(${q.id})">接诊</button>` : ''}
+            ${q.status === 'consulting' && q.consulting_doctor_id === currentUser.id ? 
+              `<button class="btn btn-sm btn-success" onclick="openConsultModal(${q.id}, '${q.patient_name}', ${q.queue_number})">完成</button>` : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function loadHistory() {
+      const history = await api.doctor.getHistory();
+      if (history.length === 0) {
+        document.getElementById('historyTableContainer').innerHTML = '<p style="color: #999; text-align: center;">暂无接诊记录</p>';
+        return;
+      }
+
+      document.getElementById('historyTableContainer').innerHTML = `
+        <table>
+          <thead>
+            <tr><th>序号</th><th>患者姓名</th><th>身份证号</th><th>主诉</th><th>诊断</th><th>开始时间</th><th>结束时间</th></tr>
+          </thead>
+          <tbody>
+            ${history.map(h => `
+              <tr>
+                <td>${h.queue_number}</td>
+                <td>${h.patient_name}</td>
+                <td>${h.id_card}</td>
+                <td>${h.symptoms || '-'}</td>
+                <td>${h.diagnosis}</td>
+                <td>${h.consultation_started_at ? h.consultation_started_at.slice(11, 19) : '-'}</td>
+                <td>${h.consultation_ended_at ? h.consultation_ended_at.slice(11, 19) : '-'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function startConsult(queueId) {
+      if (!confirm('确认开始接诊该患者？')) return;
+      try {
+        await api.doctor.startConsult(queueId);
+        showAlert('开始接诊');
+        loadAll();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    function openConsultModal(queueId, patientName, queueNumber) {
+      currentConsultQueueId = queueId;
+      document.getElementById('consultPatientInfo').innerHTML = `
+        <p style="margin-bottom: 15px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
+          <strong>${queueNumber}号 - ${patientName}</strong>
+        </p>
+      `;
+      document.getElementById('symptoms').value = '';
+      document.getElementById('diagnosis').value = '';
+      document.getElementById('prescription').value = '';
+      document.getElementById('notes').value = '';
+      document.getElementById('consultModal').classList.add('active');
+    }
+
+    function closeConsultModal() {
+      currentConsultQueueId = null;
+      document.getElementById('consultModal').classList.remove('active');
+    }
+
+    async function completeConsult() {
+      const symptoms = document.getElementById('symptoms').value.trim();
+      const diagnosis = document.getElementById('diagnosis').value.trim();
+      const prescription = document.getElementById('prescription').value.trim();
+      const notes = document.getElementById('notes').value.trim();
+
+      if (!diagnosis) return showAlert('请填写诊断结果', 'error');
+      if (!confirm('确认完成接诊？')) return;
+
+      try {
+        await api.doctor.completeConsult(currentConsultQueueId, { symptoms, diagnosis, prescription, notes });
+        showAlert('接诊完成');
+        closeConsultModal();
+        loadAll();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    async function loadAll() {
+      await loadCurrent();
+      await loadWaiting();
+      await loadQueue();
+      await loadHistory();
+    }
+
+    loadAll();
+    setInterval(loadAll, 5000);
+  </script>
+</body>
+</html>

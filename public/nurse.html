@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>护士台 - 门诊分诊排队系统</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="header">
+    <h1>门诊分诊排队系统 - 护士台</h1>
+    <div class="user-info">
+      <span id="userInfo"></span>
+      <a href="#" onclick="logout()">退出登录</a>
+    </div>
+  </div>
+  <div class="container">
+    <div class="card">
+      <h2>选择科室</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label>科室</label>
+          <select id="department" onchange="loadData()"></select>
+        </div>
+        <div class="form-group">
+          <label>日期</label>
+          <input type="date" id="queueDate" onchange="loadData()">
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-grid" id="statsGrid"></div>
+
+    <div class="tabs">
+      <div class="tab active" data-tab="register">患者登记</div>
+      <div class="tab" data-tab="queue">排队管理</div>
+    </div>
+
+    <div id="register" class="tab-content active">
+      <div class="card">
+        <h2>患者信息</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>身份证号</label>
+            <input type="text" id="patientIdCard" placeholder="请输入身份证号">
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-default" onclick="queryPatient()">查询患者</button>
+          </div>
+        </div>
+        <div id="patientForm" style="display: none;">
+          <div class="form-row">
+            <div class="form-group">
+              <label>姓名</label>
+              <input type="text" id="patientName">
+            </div>
+            <div class="form-group">
+              <label>手机号</label>
+              <input type="text" id="patientPhone">
+            </div>
+            <div class="form-group">
+              <label>性别</label>
+              <select id="patientGender">
+                <option value="男">男</option>
+                <option value="女">女</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>年龄</label>
+              <input type="number" id="patientAge" min="0">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>挂号</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>挂号类型</label>
+            <select id="registerType">
+              <option value="appointment">预约</option>
+              <option value="walkin">现场加号</option>
+            </select>
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="registerPatient()">确认挂号</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="queue" class="tab-content">
+      <div class="card">
+        <h2>排队列表</h2>
+        <table id="queueTable">
+          <thead>
+            <tr>
+              <th>序号</th><th>姓名</th><th>身份证号</th><th>类型</th><th>状态</th>
+              <th>叫号时间</th><th>叫号人</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="returnModal" class="modal">
+    <div class="modal-content">
+      <h3>退回原因</h3>
+      <div class="form-group">
+        <label>请输入退回原因</label>
+        <textarea id="returnReason" rows="4" style="width: 100%;"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeReturnModal()">取消</button>
+        <button class="btn btn-danger" onclick="confirmReturn()">确认退回</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert"></div>
+  <script src="/js/api.js"></script>
+  <script>
+    let currentUser = getUser();
+    let currentPatientId = null;
+    let returnQueueId = null;
+    if (!currentUser || currentUser.role !== 'nurse') window.location.href = 'login.html';
+    document.getElementById('userInfo').textContent = `${currentUser.name} (护士)`;
+    document.getElementById('queueDate').value = new Date().toISOString().split('T')[0];
+
+    function showAlert(message, type = 'success') {
+      document.getElementById('alert').innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+      setTimeout(() => document.getElementById('alert').innerHTML = '', 3000);
+    }
+
+    async function logout() {
+      await api.logout();
+      clearToken();
+      window.location.href = 'login.html';
+    }
+
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.tab).classList.add('active');
+        if (tab.dataset.tab === 'queue') loadQueue();
+      });
+    });
+
+    async function loadDepartments() {
+      const depts = await api.getDepartments();
+      const sel = document.getElementById('department');
+      sel.innerHTML = depts.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+      loadData();
+    }
+
+    async function loadData() {
+      loadStats();
+      if (document.getElementById('queue').classList.contains('active')) {
+        loadQueue();
+      }
+    }
+
+    async function loadStats() {
+      const deptId = document.getElementById('department').value;
+      const date = document.getElementById('queueDate').value;
+      const stats = await api.nurse.getQueueStats(deptId, date);
+      document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card blue"><div class="number">${stats.waiting}</div><div class="label">等待中</div></div>
+        <div class="stat-card orange"><div class="number">${stats.called}</div><div class="label">已叫号</div></div>
+        <div class="stat-card green"><div class="number">${stats.consulting}</div><div class="label">就诊中</div></div>
+        <div class="stat-card gray"><div class="number">${stats.completed}</div><div class="label">已完成</div></div>
+        <div class="stat-card red"><div class="number">${stats.missed}</div><div class="label">过号</div></div>
+        <div class="stat-card pink"><div class="number">${stats.returned}</div><div class="label">退回</div></div>
+        <div class="stat-card"><div class="number">${stats.total}/${stats.total_slots}</div><div class="label">已挂号/总号源</div></div>
+      `;
+    }
+
+    async function queryPatient() {
+      const idCard = document.getElementById('patientIdCard').value.trim();
+      if (!idCard) return showAlert('请输入身份证号', 'error');
+      try {
+        const patient = await api.nurse.getPatient(idCard);
+        currentPatientId = patient.id;
+        document.getElementById('patientName').value = patient.name;
+        document.getElementById('patientPhone').value = patient.phone || '';
+        document.getElementById('patientGender').value = patient.gender || '男';
+        document.getElementById('patientAge').value = patient.age || '';
+        document.getElementById('patientForm').style.display = 'block';
+        showAlert('找到患者信息');
+      } catch (e) {
+        if (e.message.includes('不存在')) {
+          document.getElementById('patientForm').style.display = 'block';
+          document.getElementById('patientName').value = '';
+          document.getElementById('patientPhone').value = '';
+          currentPatientId = null;
+          showAlert('未找到患者，请填写信息后挂号', 'info');
+        } else {
+          showAlert(e.message, 'error');
+        }
+      }
+    }
+
+    async function registerPatient() {
+      const idCard = document.getElementById('patientIdCard').value.trim();
+      const name = document.getElementById('patientName').value.trim();
+      const phone = document.getElementById('patientPhone').value.trim();
+      const gender = document.getElementById('patientGender').value;
+      const age = parseInt(document.getElementById('patientAge').value) || null;
+      const type = document.getElementById('registerType').value;
+      const deptId = document.getElementById('department').value;
+
+      if (!idCard || !name) return showAlert('请填写身份证号和姓名', 'error');
+
+      try {
+        let patientId = currentPatientId;
+        if (!patientId) {
+          const patient = await api.nurse.createPatient({ name, id_card: idCard, phone, gender, age });
+          patientId = patient.id;
+        }
+
+        const result = await api.nurse.registerQueue({
+          patient_id: patientId,
+          department_id: deptId,
+          type: type
+        });
+
+        showAlert(`挂号成功！号码：${result.queue_number}`);
+        currentPatientId = null;
+        document.getElementById('patientIdCard').value = '';
+        document.getElementById('patientName').value = '';
+        document.getElementById('patientPhone').value = '';
+        document.getElementById('patientForm').style.display = 'none';
+        loadData();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    async function loadQueue() {
+      const deptId = document.getElementById('department').value;
+      const date = document.getElementById('queueDate').value;
+      const queue = await api.nurse.getQueue(deptId, date);
+      const statusMap = {
+        waiting: '等待中', called: '已叫号', consulting: '就诊中',
+        completed: '已完成', missed: '过号', returned: '退回'
+      };
+      const typeMap = { appointment: '预约', walkin: '现场' };
+
+      document.querySelector('#queueTable tbody').innerHTML = queue.map(q => `
+        <tr>
+          <td>${q.queue_number}</td>
+          <td>${q.patient_name}</td>
+          <td>${q.id_card}</td>
+          <td><span class="type-badge type-${q.type}">${typeMap[q.type]}</span></td>
+          <td><span class="status-badge status-${q.status}">${statusMap[q.status]}</span></td>
+          <td>${q.called_at ? q.called_at.slice(11, 19) : '-'}</td>
+          <td>${q.called_by_name || '-'}</td>
+          <td>
+            ${q.status === 'waiting' ? `<button class="btn btn-sm btn-success" onclick="callPatient(${q.id})">叫号</button>` : ''}
+            ${q.status === 'called' ? `
+              <button class="btn btn-sm btn-warning" onclick="missPatient(${q.id})">过号</button>
+              <button class="btn btn-sm btn-danger" onclick="openReturnModal(${q.id})">退回</button>
+            ` : ''}
+            ${q.status === 'missed' ? `<button class="btn btn-sm btn-danger" onclick="openReturnModal(${q.id})">退回</button>` : ''}
+            ${q.status === 'returned' ? `<span title="${q.return_reason}">${q.return_reason}</span>` : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function callPatient(id) {
+      try {
+        await api.nurse.callPatient(id);
+        showAlert('叫号成功');
+        loadQueue();
+        loadStats();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    async function missPatient(id) {
+      if (!confirm('确认该患者过号？')) return;
+      try {
+        await api.nurse.missPatient(id);
+        showAlert('已标记为过号');
+        loadQueue();
+        loadStats();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    function openReturnModal(id) {
+      returnQueueId = id;
+      document.getElementById('returnReason').value = '';
+      document.getElementById('returnModal').classList.add('active');
+    }
+
+    function closeReturnModal() {
+      returnQueueId = null;
+      document.getElementById('returnModal').classList.remove('active');
+    }
+
+    async function confirmReturn() {
+      const reason = document.getElementById('returnReason').value.trim();
+      if (!reason) return showAlert('请输入退回原因', 'error');
+      try {
+        await api.nurse.returnQueue(returnQueueId, reason);
+        showAlert('退回成功');
+        closeReturnModal();
+        loadQueue();
+        loadStats();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    loadDepartments();
+    setInterval(() => {
+      if (document.getElementById('queue').classList.contains('active')) {
+        loadQueue();
+        loadStats();
+      }
+    }, 5000);
+  </script>
+</body>
+</html>

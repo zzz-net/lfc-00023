@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登录 - 门诊分诊排队系统</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="login-container">
+    <h2>门诊分诊排队系统</h2>
+    <div id="alert"></div>
+    <form id="loginForm">
+      <div class="form-group">
+        <label>用户名</label>
+        <input type="text" id="username" required placeholder="请输入用户名">
+      </div>
+      <div class="form-group">
+        <label>密码</label>
+        <input type="password" id="password" required placeholder="请输入密码">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 20px;">登录</button>
+    </form>
+    <div style="margin-top: 20px; text-align: center;">
+      <a href="index.html" style="color: #1890ff; text-decoration: none;">返回首页</a>
+    </div>
+  </div>
+  <script src="/js/api.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const role = params.get('role');
+    if (role === 'admin') document.getElementById('username').value = 'admin';
+    if (role === 'nurse') document.getElementById('username').value = 'nurse1';
+    if (role === 'doctor') document.getElementById('username').value = 'doctor1';
+
+    function showAlert(message, type = 'error') {
+      document.getElementById('alert').innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+
+      try {
+        const result = await api.login(username, password);
+        setToken(result.token);
+        setUser(result.user);
+
+        let redirectUrl = 'index.html';
+        if (result.user.role === 'admin') redirectUrl = 'admin.html';
+        else if (result.user.role === 'nurse') redirectUrl = 'nurse.html';
+        else if (result.user.role === 'doctor') redirectUrl = 'doctor.html';
+
+        showAlert('登录成功，正在跳转...', 'success');
+        setTimeout(() => window.location.href = redirectUrl, 500);
+      } catch (err) {
+        showAlert(err.message);
+      }
+    });
+  </script>
+</body>
+</html>

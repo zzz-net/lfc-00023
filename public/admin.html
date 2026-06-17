@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理员 - 门诊分诊排队系统</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="header">
+    <h1>门诊分诊排队系统 - 管理员</h1>
+    <div class="user-info">
+      <span id="userInfo"></span>
+      <a href="#" onclick="logout()">退出登录</a>
+    </div>
+  </div>
+  <div class="container">
+    <div class="tabs">
+      <div class="tab active" data-tab="departments">科室管理</div>
+      <div class="tab" data-tab="slots">号源配置</div>
+      <div class="tab" data-tab="closed">停诊时段</div>
+      <div class="tab" data-tab="users">用户管理</div>
+      <div class="tab" data-tab="audit">审计日志</div>
+      <div class="tab" data-tab="reports">日报导出</div>
+    </div>
+
+    <div id="departments" class="tab-content active">
+      <div class="card">
+        <h2>添加科室</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>科室名称</label>
+            <input type="text" id="deptName" placeholder="如：内科">
+          </div>
+          <div class="form-group">
+            <label>科室代码</label>
+            <input type="text" id="deptCode" placeholder="如：NK">
+          </div>
+          <div class="form-group">
+            <label>描述</label>
+            <input type="text" id="deptDesc" placeholder="科室描述">
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="addDepartment()">添加科室</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>科室列表</h2>
+        <table id="deptTable">
+          <thead>
+            <tr><th>ID</th><th>代码</th><th>名称</th><th>描述</th><th>状态</th><th>操作</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="slots" class="tab-content">
+      <div class="card">
+        <h2>配置号源</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>科室</label>
+            <select id="slotDept"></select>
+          </div>
+          <div class="form-group">
+            <label>日期</label>
+            <input type="date" id="slotDate">
+          </div>
+          <div class="form-group">
+            <label>总号源数</label>
+            <input type="number" id="slotTotal" value="20" min="1">
+          </div>
+          <div class="form-group">
+            <label>现场加号上限</label>
+            <input type="number" id="slotWalkin" value="5" min="0">
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="addSlot()">配置号源</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>号源列表</h2>
+        <table id="slotTable">
+          <thead>
+            <tr><th>ID</th><th>科室</th><th>日期</th><th>总号源</th><th>现场加号上限</th><th>操作</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="closed" class="tab-content">
+      <div class="card">
+        <h2>添加停诊时段</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>科室</label>
+            <select id="closedDept"></select>
+          </div>
+          <div class="form-group">
+            <label>开始日期</label>
+            <input type="date" id="closedStart">
+          </div>
+          <div class="form-group">
+            <label>结束日期</label>
+            <input type="date" id="closedEnd">
+          </div>
+          <div class="form-group">
+            <label>原因</label>
+            <input type="text" id="closedReason" placeholder="停诊原因">
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-danger" onclick="addClosedPeriod()">添加停诊</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>停诊时段列表</h2>
+        <table id="closedTable">
+          <thead>
+            <tr><th>ID</th><th>科室</th><th>开始日期</th><th>结束日期</th><th>原因</th><th>操作</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="users" class="tab-content">
+      <div class="card">
+        <h2>添加用户</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>用户名</label>
+            <input type="text" id="userUsername">
+          </div>
+          <div class="form-group">
+            <label>密码</label>
+            <input type="password" id="userPassword">
+          </div>
+          <div class="form-group">
+            <label>姓名</label>
+            <input type="text" id="userName">
+          </div>
+          <div class="form-group">
+            <label>角色</label>
+            <select id="userRole">
+              <option value="admin">管理员</option>
+              <option value="nurse">护士</option>
+              <option value="doctor">医生</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>所属科室（医生必填）</label>
+            <select id="userDept"></select>
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="addUser()">添加用户</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>用户列表</h2>
+        <table id="userTable">
+          <thead>
+            <tr><th>ID</th><th>用户名</th><th>姓名</th><th>角色</th><th>所属科室</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="audit" class="tab-content">
+      <div class="card">
+        <h2>审计日志</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>操作类型</label>
+            <select id="auditAction">
+              <option value="">全部</option>
+              <option value="create_department">创建科室</option>
+              <option value="register_queue">挂号</option>
+              <option value="call_patient">叫号</option>
+              <option value="miss_patient">过号</option>
+              <option value="return_queue">退回</option>
+              <option value="start_consultation">开始接诊</option>
+              <option value="complete_consultation">完成接诊</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>开始日期</label>
+            <input type="date" id="auditStart">
+          </div>
+          <div class="form-group">
+            <label>结束日期</label>
+            <input type="date" id="auditEnd">
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="loadAuditLogs()">查询</button>
+          </div>
+        </div>
+        <table id="auditTable">
+          <thead>
+            <tr><th>时间</th><th>操作人</th><th>操作</th><th>详情</th><th>IP</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="reports" class="tab-content">
+      <div class="card">
+        <h2>日报导出</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>日期</label>
+            <input type="date" id="reportDate">
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="exportReport('json')">导出JSON</button>
+            <button class="btn btn-success" onclick="exportReport('csv')">导出CSV</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert"></div>
+  <script src="/js/api.js"></script>
+  <script>
+    let currentUser = getUser();
+    if (!currentUser || currentUser.role !== 'admin') window.location.href = 'login.html';
+    document.getElementById('userInfo').textContent = `${currentUser.name} (管理员)`;
+    document.getElementById('slotDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('closedStart').value = new Date().toISOString().split('T')[0];
+    document.getElementById('closedEnd').value = new Date().toISOString().split('T')[0];
+    document.getElementById('reportDate').value = new Date().toISOString().split('T')[0];
+
+    function showAlert(message, type = 'success') {
+      document.getElementById('alert').innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+      setTimeout(() => document.getElementById('alert').innerHTML = '', 3000);
+    }
+
+    async function logout() {
+      await api.logout();
+      clearToken();
+      window.location.href = 'login.html';
+    }
+
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.tab).classList.add('active');
+        if (tab.dataset.tab === 'departments') loadDepartments();
+        if (tab.dataset.tab === 'slots') { loadDeptSelects(); loadSlots(); }
+        if (tab.dataset.tab === 'closed') { loadDeptSelects(); loadClosedPeriods(); }
+        if (tab.dataset.tab === 'users') { loadDeptSelects(); loadUsers(); }
+        if (tab.dataset.tab === 'audit') loadAuditLogs();
+      });
+    });
+
+    async function loadDeptSelects() {
+      const depts = await api.admin.getDepartments();
+      ['slotDept', 'closedDept', 'userDept'].forEach(id => {
+        const sel = document.getElementById(id);
+        sel.innerHTML = '<option value="">请选择科室</option>' + 
+          depts.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+      });
+    }
+
+    async function loadDepartments() {
+      const depts = await api.admin.getDepartments();
+      document.querySelector('#deptTable tbody').innerHTML = depts.map(d => `
+        <tr>
+          <td>${d.id}</td>
+          <td>${d.code}</td>
+          <td>${d.name}</td>
+          <td>${d.description || '-'}</td>
+          <td>${d.is_active ? '<span class="status-badge status-consulting">启用</span>' : '<span class="status-badge status-missed">停用</span>'}</td>
+          <td>
+            <button class="btn btn-sm ${d.is_active ? 'btn-warning' : 'btn-success'}" 
+                    onclick="toggleDept(${d.id}, ${d.is_active ? 0 : 1})">
+              ${d.is_active ? '停用' : '启用'}
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function addDepartment() {
+      const name = document.getElementById('deptName').value;
+      const code = document.getElementById('deptCode').value;
+      const description = document.getElementById('deptDesc').value;
+      if (!name || !code) return showAlert('请填写科室名称和代码', 'error');
+      try {
+        await api.admin.createDepartment({ name, code, description });
+        showAlert('科室添加成功');
+        document.getElementById('deptName').value = '';
+        document.getElementById('deptCode').value = '';
+        document.getElementById('deptDesc').value = '';
+        loadDepartments();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function toggleDept(id, isActive) {
+      try {
+        await api.admin.updateDepartment(id, { is_active: isActive });
+        showAlert('状态更新成功');
+        loadDepartments();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function loadSlots() {
+      const slots = await api.admin.getDailySlots();
+      document.querySelector('#slotTable tbody').innerHTML = slots.map(s => `
+        <tr>
+          <td>${s.id}</td>
+          <td>${s.department_name}</td>
+          <td>${s.date}</td>
+          <td><input type="number" value="${s.total_slots}" min="1" id="slotTotal_${s.id}" style="width: 80px;"></td>
+          <td><input type="number" value="${s.walkin_limit}" min="0" id="slotWalkin_${s.id}" style="width: 80px;"></td>
+          <td><button class="btn btn-sm btn-primary" onclick="updateSlot(${s.id})">保存</button></td>
+        </tr>
+      `).join('');
+    }
+
+    async function addSlot() {
+      const department_id = document.getElementById('slotDept').value;
+      const date = document.getElementById('slotDate').value;
+      const total_slots = parseInt(document.getElementById('slotTotal').value);
+      const walkin_limit = parseInt(document.getElementById('slotWalkin').value);
+      if (!department_id || !date) return showAlert('请选择科室和日期', 'error');
+      try {
+        await api.admin.createDailySlot({ department_id, date, total_slots, walkin_limit });
+        showAlert('号源配置成功');
+        loadSlots();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function updateSlot(id) {
+      const total_slots = parseInt(document.getElementById(`slotTotal_${id}`).value);
+      const walkin_limit = parseInt(document.getElementById(`slotWalkin_${id}`).value);
+      try {
+        await api.admin.updateDailySlot(id, { total_slots, walkin_limit });
+        showAlert('号源更新成功');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function loadClosedPeriods() {
+      const periods = await api.admin.getClosedPeriods();
+      document.querySelector('#closedTable tbody').innerHTML = periods.map(p => `
+        <tr>
+          <td>${p.id}</td>
+          <td>${p.department_name}</td>
+          <td>${p.start_date}</td>
+          <td>${p.end_date}</td>
+          <td>${p.reason || '-'}</td>
+          <td><button class="btn btn-sm btn-danger" onclick="deleteClosed(${p.id})">删除</button></td>
+        </tr>
+      `).join('');
+    }
+
+    async function addClosedPeriod() {
+      const department_id = document.getElementById('closedDept').value;
+      const start_date = document.getElementById('closedStart').value;
+      const end_date = document.getElementById('closedEnd').value;
+      const reason = document.getElementById('closedReason').value;
+      if (!department_id || !start_date || !end_date) return showAlert('请填写完整信息', 'error');
+      try {
+        await api.admin.createClosedPeriod({ department_id, start_date, end_date, reason });
+        showAlert('停诊时段添加成功');
+        document.getElementById('closedReason').value = '';
+        loadClosedPeriods();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function deleteClosed(id) {
+      if (!confirm('确定删除此停诊时段？')) return;
+      try {
+        await api.admin.deleteClosedPeriod(id);
+        showAlert('删除成功');
+        loadClosedPeriods();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function loadUsers() {
+      const users = await api.admin.getUsers();
+      const roleMap = { admin: '管理员', nurse: '护士', doctor: '医生' };
+      document.querySelector('#userTable tbody').innerHTML = users.map(u => `
+        <tr>
+          <td>${u.id}</td>
+          <td>${u.username}</td>
+          <td>${u.name}</td>
+          <td><span class="type-badge ${u.role === 'admin' ? 'type-appointment' : 'type-walkin'}">${roleMap[u.role]}</span></td>
+          <td>${u.department_name || '-'}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function addUser() {
+      const username = document.getElementById('userUsername').value;
+      const password = document.getElementById('userPassword').value;
+      const name = document.getElementById('userName').value;
+      const role = document.getElementById('userRole').value;
+      const department_id = document.getElementById('userDept').value || null;
+      if (!username || !password || !name) return showAlert('请填写完整信息', 'error');
+      if (role === 'doctor' && !department_id) return showAlert('医生必须指定科室', 'error');
+      try {
+        await api.admin.createUser({ username, password, name, role, department_id });
+        showAlert('用户添加成功');
+        document.getElementById('userUsername').value = '';
+        document.getElementById('userPassword').value = '';
+        document.getElementById('userName').value = '';
+        loadUsers();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function loadAuditLogs() {
+      const action = document.getElementById('auditAction').value;
+      const start_date = document.getElementById('auditStart').value;
+      const end_date = document.getElementById('auditEnd').value;
+      const data = await api.getAuditLogs({ action, start_date, end_date, pageSize: 100 });
+      const actionMap = {
+        create_department: '创建科室', register_queue: '挂号', call_patient: '叫号',
+        miss_patient: '过号', return_queue: '退回', start_consultation: '开始接诊',
+        complete_consultation: '完成接诊', create_user: '创建用户'
+      };
+      document.querySelector('#auditTable tbody').innerHTML = data.logs.map(l => `
+        <tr>
+          <td>${l.created_at}</td>
+          <td>${l.user_name || '-'}</td>
+          <td>${actionMap[l.action] || l.action}</td>
+          <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">${JSON.stringify(l.details)}</td>
+          <td>${l.ip_address || '-'}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function exportReport(format) {
+      const date = document.getElementById('reportDate').value;
+      const url = `/api/public/reports/daily${format === 'csv' ? '/csv' : ''}?date=${date}`;
+      window.open(url, '_blank');
+    }
+
+    loadDepartments();
+    loadDeptSelects();
+  </script>
+</body>
+</html>
