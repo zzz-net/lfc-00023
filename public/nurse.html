@@ -549,22 +549,36 @@
       const batch = await api.nurse.getBatchDetail(id);
       document.getElementById('batchDetailTitle').textContent = `批次详情 - ${batch.batch_no}`;
       
-      const statusMap = { pending: '待处理', success: '成功', failed: '失败' };
+      const importStatusMap = { pending: '待处理', success: '成功', failed: '失败' };
+      const queueStatusMap = {
+        waiting: '等待中', called: '已叫号', missed: '过号',
+        consulting: '就诊中', completed: '已完成', returned: '已退回'
+      };
       const typeMap = { appointment: '预约', walkin: '现场' };
-      const statusClass = { success: 'status-consulting', failed: 'status-missed', pending: 'status-waiting' };
+      const importStatusClass = { success: 'status-consulting', failed: 'status-missed', pending: 'status-waiting' };
+      const queueStatusClass = {
+        waiting: 'status-waiting', called: 'status-called', missed: 'status-missed',
+        consulting: 'status-consulting', completed: 'status-completed', returned: 'status-returned'
+      };
 
-      document.querySelector('#batchDetailTable tbody').innerHTML = batch.records.map(r => `
+      document.querySelector('#batchDetailTable tbody').innerHTML = batch.records.map(r => {
+        const hasQueue = r.queue_record_id != null && r.queue_status != null;
+        const displayStatus = hasQueue ? queueStatusMap[r.queue_status] : importStatusMap[r.status];
+        const displayClass = hasQueue ? queueStatusClass[r.queue_status] : importStatusClass[r.status];
+        const idCard = r.patient_id_card || r.id_card;
+        const pName = r.patient_name || r.name;
+        return `
         <tr>
           <td>${r.row_index}</td>
-          <td>${r.id_card}</td>
-          <td>${r.name}</td>
+          <td>${idCard}</td>
+          <td>${pName}</td>
           <td>${r.department_name}</td>
           <td>${r.queue_date}</td>
           <td>${typeMap[r.type] || r.type}</td>
-          <td><span class="status-badge ${statusClass[r.status]}">${statusMap[r.status]}</span></td>
+          <td><span class="status-badge ${displayClass}">${displayStatus}</span></td>
           <td class="text-red">${r.error_message || '-'}</td>
-        </tr>
-      `).join('');
+        </tr>`;
+      }).join('');
 
       document.getElementById('batchDetail').style.display = 'block';
     }
