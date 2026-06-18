@@ -9,6 +9,22 @@ const {
   getTodayReminders,
   updateFollowupStatus
 } = require('../utils/followup');
+const {
+  approveReschedule,
+  rejectReschedule,
+  revertReschedule,
+  listExamOrders,
+  getExamOrderDetail,
+  listRescheduleRequests,
+  listWaitlist,
+  promoteWaitlist,
+  cancelWaitlist,
+  listExamSlots,
+  listTodayExecutions,
+  listExamTypes,
+  completeExamOrder,
+  cancelExamOrder
+} = require('../utils/exam');
 
 const router = express.Router();
 
@@ -535,6 +551,127 @@ router.post('/followup/:id/contact', (req, res) => {
   }
   
   const result = updateFollowupStatus(parseInt(req.params.id), status, { contact_result }, req.user.id, req.user.role, req.ip);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/exam/types', (req, res) => {
+  const result = listExamTypes();
+  res.json(result);
+});
+
+router.get('/exam/today', (req, res) => {
+  const date = req.query.date || new Date().toISOString().split('T')[0];
+  const result = listTodayExecutions(date);
+  res.json(result);
+});
+
+router.get('/exam/orders', (req, res) => {
+  const result = listExamOrders(req.query, req.user.id, req.user.role);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/exam/orders/:id', (req, res) => {
+  const result = getExamOrderDetail(parseInt(req.params.id), req.user.id, req.user.role);
+  if (!result.success) {
+    const statusCode = result.code || 404;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/orders/:id/complete', (req, res) => {
+  const { result: examResult } = req.body;
+  const result = completeExamOrder(parseInt(req.params.id), req.user.id, req.user.role, req.ip, examResult);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/orders/:id/cancel', (req, res) => {
+  const { cancel_reason } = req.body;
+  if (!cancel_reason) {
+    return res.status(400).json({ success: false, error: '取消原因不能为空' });
+  }
+  const result = cancelExamOrder(parseInt(req.params.id), req.user.id, req.user.role, req.ip, cancel_reason);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/exam/slots', (req, res) => {
+  const result = listExamSlots(req.query);
+  res.json(result);
+});
+
+router.get('/exam/reschedule', (req, res) => {
+  const result = listRescheduleRequests(req.query, req.user.id, req.user.role);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/reschedule/:id/approve', (req, res) => {
+  const { slot_id, review_notes } = req.body;
+  const result = approveReschedule(parseInt(req.params.id), req.user.id, req.user.role, req.ip, slot_id ? parseInt(slot_id) : null, review_notes);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/reschedule/:id/reject', (req, res) => {
+  const { review_notes } = req.body;
+  const result = rejectReschedule(parseInt(req.params.id), req.user.id, req.user.role, req.ip, review_notes);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/reschedule/:id/revert', (req, res) => {
+  const { revert_reason } = req.body;
+  const result = revertReschedule(parseInt(req.params.id), req.user.id, req.user.role, req.ip, revert_reason);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/exam/waitlist', (req, res) => {
+  const result = listWaitlist(req.query);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/waitlist/:id/promote', (req, res) => {
+  const result = promoteWaitlist(parseInt(req.params.id), req.user.id, req.user.role, req.ip);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/waitlist/:id/cancel', (req, res) => {
+  const { cancel_reason } = req.body;
+  const result = cancelWaitlist(parseInt(req.params.id), req.user.id, req.user.role, req.ip, cancel_reason);
   if (!result.success) {
     const statusCode = result.code || 400;
     return res.status(statusCode).json(result);

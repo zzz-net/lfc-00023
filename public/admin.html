@@ -25,6 +25,11 @@
       <div class="tab" data-tab="batches">导入批次</div>
       <div class="tab" data-tab="sandbox">导入沙箱</div>
       <div class="tab" data-tab="audit">审计日志</div>
+      <div class="tab" data-tab="examTypes">检查类型</div>
+      <div class="tab" data-tab="examSlots">检查时段</div>
+      <div class="tab" data-tab="examOrders">检查单</div>
+      <div class="tab" data-tab="examReview">改约审核</div>
+      <div class="tab" data-tab="examConfig">检查配置</div>
       <div class="tab" data-tab="reports">日报导出</div>
     </div>
 
@@ -293,6 +298,263 @@
       </div>
     </div>
 
+    <div id="examTypes" class="tab-content">
+      <div class="card">
+        <h2>添加/编辑检查类型</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>名称 *</label>
+            <input type="text" id="examTypeName" placeholder="如：胸部CT">
+          </div>
+          <div class="form-group">
+            <label>代码 *</label>
+            <input type="text" id="examTypeCode" placeholder="如：CHEST_CT">
+          </div>
+          <div class="form-group">
+            <label>时长(分钟) *</label>
+            <input type="number" id="examTypeDuration" value="30" min="1">
+          </div>
+          <div class="form-group">
+            <label>是否空腹</label>
+            <select id="examTypeFasting">
+              <option value="0">否</option>
+              <option value="1">是</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>是否特殊准备</label>
+            <select id="examTypePrep">
+              <option value="0">否</option>
+              <option value="1">是</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label>描述</label>
+            <input type="text" id="examTypeDesc" placeholder="检查类型描述" style="width:100%;">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex: 1;">
+            <label>准备说明</label>
+            <textarea id="examTypePrepNotes" rows="2" style="width:100%;" placeholder="如：检查前需禁食8小时"></textarea>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="addExamType()" id="examTypeSubmitBtn">添加检查类型</button>
+            <button class="btn btn-default" onclick="cancelEditExamType()" id="examTypeCancelBtn" style="display:none;">取消编辑</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>检查类型列表</h2>
+        <table id="examTypeTable">
+          <thead>
+            <tr>
+              <th>ID</th><th>代码</th><th>名称</th><th>时长</th><th>空腹</th><th>特殊准备</th><th>状态</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="examSlots" class="tab-content">
+      <div class="card">
+        <h2>筛选</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>检查类型</label>
+            <select id="examSlotTypeFilter" onchange="loadExamSlots()">
+              <option value="">全部</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>日期</label>
+            <input type="date" id="examSlotDateFilter" onchange="loadExamSlots()">
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="loadExamSlots()">查询</button>
+            <button class="btn btn-success" onclick="openBatchCreateSlotsModal()">批量生成时段</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>添加/编辑检查时段</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>检查类型 *</label>
+            <select id="examSlotType"></select>
+          </div>
+          <div class="form-group">
+            <label>日期 *</label>
+            <input type="date" id="examSlotDate">
+          </div>
+          <div class="form-group">
+            <label>开始时间 *</label>
+            <input type="time" id="examSlotStart">
+          </div>
+          <div class="form-group">
+            <label>结束时间 *</label>
+            <input type="time" id="examSlotEnd">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>容量 *</label>
+            <input type="number" id="examSlotCapacity" value="10" min="1">
+          </div>
+          <div class="form-group">
+            <label>诊室</label>
+            <input type="text" id="examSlotRoom" placeholder="如：CT室1">
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="addExamSlot()" id="examSlotSubmitBtn">添加时段</button>
+            <button class="btn btn-default" onclick="cancelEditExamSlot()" id="examSlotCancelBtn" style="display:none;">取消编辑</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>时段列表</h2>
+        <table id="examSlotTable">
+          <thead>
+            <tr>
+              <th>ID</th><th>检查类型</th><th>日期</th><th>时段</th><th>容量/已预约</th><th>诊室</th><th>状态</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="examOrders" class="tab-content">
+      <div class="card">
+        <h2>筛选</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>状态</label>
+            <select id="examOrderStatusFilter" onchange="loadAdminExamOrders()">
+              <option value="">全部</option>
+              <option value="pending">待排班</option>
+              <option value="scheduled">已预约</option>
+              <option value="rescheduling">改约中</option>
+              <option value="completed">已完成</option>
+              <option value="cancelled">已取消</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>检查类型</label>
+            <select id="examOrderTypeFilterAdmin" onchange="loadAdminExamOrders()">
+              <option value="">全部</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>开始日期</label>
+            <input type="date" id="examOrderStartDateAdmin" onchange="loadAdminExamOrders()">
+          </div>
+          <div class="form-group">
+            <label>结束日期</label>
+            <input type="date" id="examOrderEndDateAdmin" onchange="loadAdminExamOrders()">
+          </div>
+          <div class="form-group">
+            <label>关键字</label>
+            <input type="text" id="examOrderKeyword" placeholder="姓名/单号/身份证" onchange="loadAdminExamOrders()">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="loadAdminExamOrders()">查询</button>
+            <button class="btn btn-success" onclick="exportExamOrdersCSV()">导出检查单CSV</button>
+            <button class="btn btn-info" onclick="exportExamRescheduleCSV()">导出改约申请CSV</button>
+            <button class="btn btn-warning" onclick="exportExamWaitlistCSV()">导出候补记录CSV</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>检查单列表</h2>
+        <table id="adminExamOrderTable">
+          <thead>
+            <tr>
+              <th>单号</th><th>患者</th><th>检查类型</th><th>时段</th><th>优先级</th><th>状态</th><th>开单医生</th><th>开单时间</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="examReview" class="tab-content">
+      <div class="card">
+        <h2>改约审核列表（全量）</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>状态</label>
+            <select id="adminRescheduleStatusFilter" onchange="loadAdminReschedule()">
+              <option value="">全部</option>
+              <option value="pending">待审核</option>
+              <option value="approved">已通过</option>
+              <option value="rejected">已驳回</option>
+              <option value="cancelled">已取消</option>
+              <option value="reverted">已撤回</option>
+            </select>
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="loadAdminReschedule()">查询</button>
+          </div>
+        </div>
+        <table id="adminRescheduleTable">
+          <thead>
+            <tr>
+              <th>申请ID</th><th>检查单号</th><th>患者</th><th>原时段</th><th>期望日期</th><th>原因</th><th>状态</th><th>提交时间</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>候补列表（全量）</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>状态</label>
+            <select id="adminWaitlistStatusFilter" onchange="loadAdminWaitlist()">
+              <option value="">全部</option>
+              <option value="waiting">候补中</option>
+              <option value="promoted">已转正</option>
+              <option value="cancelled">已取消</option>
+              <option value="expired">已过期</option>
+            </select>
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="loadAdminWaitlist()">查询</button>
+          </div>
+        </div>
+        <table id="adminWaitlistTable">
+          <thead>
+            <tr>
+              <th>ID</th><th>检查单号</th><th>患者</th><th>检查类型</th><th>候补日期</th><th>优先级</th><th>状态</th><th>加入时间</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="examConfig" class="tab-content">
+      <div class="card">
+        <h2>系统配置管理</h2>
+        <table id="examConfigTable">
+          <thead>
+            <tr>
+              <th>Key</th><th>Value</th><th>描述</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
     <div id="reports" class="tab-content">
       <div class="card">
         <h2>日报导出</h2>
@@ -552,6 +814,325 @@
     </div>
   </div>
 
+  <div id="examTypeModal" class="modal">
+    <div class="modal-content">
+      <h3>编辑检查类型</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>名称 *</label>
+          <input type="text" id="modalExamTypeName">
+        </div>
+        <div class="form-group">
+          <label>代码 *</label>
+          <input type="text" id="modalExamTypeCode">
+        </div>
+        <div class="form-group">
+          <label>时长(分钟) *</label>
+          <input type="number" id="modalExamTypeDuration" min="1">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>是否空腹</label>
+          <select id="modalExamTypeFasting">
+            <option value="0">否</option>
+            <option value="1">是</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>是否特殊准备</label>
+          <select id="modalExamTypePrep">
+            <option value="0">否</option>
+            <option value="1">是</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>描述</label>
+        <input type="text" id="modalExamTypeDesc" style="width:100%;">
+      </div>
+      <div class="form-group">
+        <label>准备说明</label>
+        <textarea id="modalExamTypePrepNotes" rows="2" style="width:100%;"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeExamTypeModal()">取消</button>
+        <button class="btn btn-primary" onclick="confirmEditExamType()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="examSlotModal" class="modal">
+    <div class="modal-content">
+      <h3>编辑检查时段</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>检查类型 *</label>
+          <select id="modalExamSlotType"></select>
+        </div>
+        <div class="form-group">
+          <label>日期 *</label>
+          <input type="date" id="modalExamSlotDate">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>开始时间 *</label>
+          <input type="time" id="modalExamSlotStart">
+        </div>
+        <div class="form-group">
+          <label>结束时间 *</label>
+          <input type="time" id="modalExamSlotEnd">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>容量 *</label>
+          <input type="number" id="modalExamSlotCapacity" min="1">
+        </div>
+        <div class="form-group">
+          <label>诊室</label>
+          <input type="text" id="modalExamSlotRoom">
+        </div>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeExamSlotModal()">取消</button>
+        <button class="btn btn-primary" onclick="confirmEditExamSlot()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="batchSlotsModal" class="modal">
+    <div class="modal-content">
+      <h3>批量生成检查时段</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>检查类型 *</label>
+          <select id="batchSlotType"></select>
+        </div>
+        <div class="form-group">
+          <label>开始日期 *</label>
+          <input type="date" id="batchSlotStartDate">
+        </div>
+        <div class="form-group">
+          <label>结束日期 *</label>
+          <input type="date" id="batchSlotEndDate">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>每日开始时间 *</label>
+          <input type="time" id="batchSlotDailyStart" value="08:00">
+        </div>
+        <div class="form-group">
+          <label>每日结束时间 *</label>
+          <input type="time" id="batchSlotDailyEnd" value="12:00">
+        </div>
+        <div class="form-group">
+          <label>时间步长(分钟) *</label>
+          <input type="number" id="batchSlotStep" value="30" min="5">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>容量 *</label>
+          <input type="number" id="batchSlotCapacity" value="10" min="1">
+        </div>
+        <div class="form-group">
+          <label>诊室</label>
+          <input type="text" id="batchSlotRoom" placeholder="如：CT室1">
+        </div>
+        <div class="form-group">
+          <label>跳过周末</label>
+          <select id="batchSlotSkipWeekend">
+            <option value="1">是</option>
+            <option value="0">否</option>
+          </select>
+        </div>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeBatchSlotsModal()">取消</button>
+        <button class="btn btn-primary" onclick="confirmBatchCreateSlots()">生成时段</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="examConfigModal" class="modal">
+    <div class="modal-content">
+      <h3>修改配置</h3>
+      <div class="form-group">
+        <label>Key</label>
+        <input type="text" id="modalConfigKey" readonly style="background:#f5f5f5;">
+      </div>
+      <div class="form-group">
+        <label>Value *</label>
+        <input type="text" id="modalConfigValue">
+      </div>
+      <div class="form-group">
+        <label>描述</label>
+        <textarea id="modalConfigDesc" rows="3" style="width:100%;"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeExamConfigModal()">取消</button>
+        <button class="btn btn-primary" onclick="confirmEditExamConfig()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="adminExamDetailModal" class="modal">
+    <div class="modal-content">
+      <h3>检查单详情</h3>
+      <div id="adminExamDetailContent"></div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeAdminExamDetailModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="adminExamScheduleModal" class="modal">
+    <div class="modal-content">
+      <h3>预约检查时段</h3>
+      <div id="adminExamScheduleInfo"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>日期</label>
+          <input type="date" id="adminScheduleSlotDate" onchange="loadAdminScheduleSlots()">
+        </div>
+      </div>
+      <div id="adminScheduleSlotsContainer"></div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeAdminExamScheduleModal()">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="adminExamCompleteModal" class="modal">
+    <div class="modal-content">
+      <h3>完成检查</h3>
+      <div id="adminExamCompleteInfo"></div>
+      <div class="form-group">
+        <label>检查结果</label>
+        <textarea id="adminExamResult" rows="4" style="width:100%;" placeholder="请输入检查结果"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeAdminExamCompleteModal()">取消</button>
+        <button class="btn btn-success" onclick="confirmAdminExamComplete()">确认完成</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="adminExamCancelModal" class="modal">
+    <div class="modal-content">
+      <h3>取消检查单</h3>
+      <div id="adminExamCancelInfo"></div>
+      <div class="form-group">
+        <label>取消原因 *</label>
+        <select id="adminExamCancelReason" style="width:100%;">
+          <option value="">请选择取消原因</option>
+          <option value="patient_refuse">患者拒绝</option>
+          <option value="patient_no_show">患者未到</option>
+          <option value="doctor_decision">医生决定</option>
+          <option value="completed_elsewhere">外院已做</option>
+          <option value="contraindication">检查禁忌</option>
+          <option value="other">其他</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>备注</label>
+        <textarea id="adminExamCancelNotes" rows="3" style="width:100%;"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeAdminExamCancelModal()">取消</button>
+        <button class="btn btn-danger" onclick="confirmAdminExamCancel()">确认取消检查</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="adminRescheduleApproveModal" class="modal">
+    <div class="modal-content">
+      <h3>通过改约申请</h3>
+      <div id="adminRescheduleApproveInfo"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>新时段日期</label>
+          <input type="date" id="adminRescheduleSlotDate" onchange="loadAdminRescheduleSlots()">
+        </div>
+      </div>
+      <div id="adminRescheduleSlotsContainer"></div>
+      <div class="form-group">
+        <label>审核备注</label>
+        <textarea id="adminRescheduleApproveNotes" rows="2" style="width:100%;"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeAdminRescheduleApproveModal()">取消</button>
+        <button class="btn btn-success" onclick="confirmAdminRescheduleApprove()">确认通过</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="adminRescheduleRejectModal" class="modal">
+    <div class="modal-content">
+      <h3>驳回改约申请</h3>
+      <div id="adminRescheduleRejectInfo"></div>
+      <div class="form-group">
+        <label>驳回原因 *</label>
+        <textarea id="adminRescheduleRejectNotes" rows="3" style="width:100%;" placeholder="请输入驳回原因"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeAdminRescheduleRejectModal()">取消</button>
+        <button class="btn btn-danger" onclick="confirmAdminRescheduleReject()">确认驳回</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="adminRescheduleRevertModal" class="modal">
+    <div class="modal-content">
+      <h3>撤回已通过的改约</h3>
+      <div id="adminRescheduleRevertInfo"></div>
+      <div class="form-group">
+        <label>撤回原因 *</label>
+        <textarea id="adminRescheduleRevertNotes" rows="3" style="width:100%;" placeholder="请输入撤回原因"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeAdminRescheduleRevertModal()">取消</button>
+        <button class="btn btn-warning" onclick="confirmAdminRescheduleRevert()">确认撤回</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="adminWaitlistPromoteModal" class="modal">
+    <div class="modal-content">
+      <h3>候补转正</h3>
+      <div id="adminWaitlistPromoteInfo"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>转正日期</label>
+          <input type="date" id="adminWaitlistSlotDate" onchange="loadAdminWaitlistSlots()">
+        </div>
+      </div>
+      <div id="adminWaitlistSlotsContainer"></div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeAdminWaitlistPromoteModal()">取消</button>
+        <button class="btn btn-success" onclick="confirmAdminWaitlistPromote()">确认转正</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="adminWaitlistCancelModal" class="modal">
+    <div class="modal-content">
+      <h3>取消候补</h3>
+      <div id="adminWaitlistCancelInfo"></div>
+      <div class="form-group">
+        <label>取消原因 *</label>
+        <textarea id="adminWaitlistCancelNotes" rows="3" style="width:100%;" placeholder="请输入取消原因"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeAdminWaitlistCancelModal()">取消</button>
+        <button class="btn btn-danger" onclick="confirmAdminWaitlistCancel()">确认取消</button>
+      </div>
+    </div>
+  </div>
+
   <div id="alert"></div>
   <script src="/js/api.js"></script>
   <script>
@@ -597,6 +1178,11 @@
         if (tab.dataset.tab === 'followup') { loadFollowupConfig(); loadAdminFollowupDepts(); loadAdminFollowups(); }
         if (tab.dataset.tab === 'audit') loadAuditLogs();
         if (tab.dataset.tab === 'batches') { loadBatchDeptsAdmin(); loadBatchesAdmin(); }
+        if (tab.dataset.tab === 'examTypes') loadExamTypesAdmin();
+        if (tab.dataset.tab === 'examSlots') { loadExamTypesForSlots(); loadExamSlots(); }
+        if (tab.dataset.tab === 'examOrders') { loadExamTypesForOrders(); loadAdminExamOrders(); }
+        if (tab.dataset.tab === 'examReview') { loadAdminReschedule(); loadAdminWaitlist(); }
+        if (tab.dataset.tab === 'examConfig') loadExamConfigs();
       });
     });
 
@@ -1481,6 +2067,905 @@
         tab.addEventListener('click', () => { loadSandboxTasks(); });
       }
     });
+
+    const examOrderStatusMap = {
+      pending: '待排班', scheduled: '已预约', rescheduling: '改约中',
+      completed: '已完成', cancelled: '已取消'
+    };
+    const examOrderStatusClass = {
+      pending: 'status-waiting', scheduled: 'status-consulting', rescheduling: 'status-called',
+      completed: 'status-completed', cancelled: 'status-missed'
+    };
+    const priorityMap = { normal: '普通', urgent: '加急', emergency: '急诊' };
+    const priorityClass = { normal: 'status-completed', urgent: 'status-called', emergency: 'status-missed' };
+    const rescheduleStatusMap = {
+      pending: '待审核', approved: '已通过', rejected: '已驳回',
+      cancelled: '已取消', reverted: '已撤回'
+    };
+    const rescheduleStatusClass = {
+      pending: 'status-waiting', approved: 'status-consulting', rejected: 'status-missed',
+      cancelled: 'status-completed', reverted: 'status-returned'
+    };
+    const reasonMap = {
+      patient_request: '患者要求', doctor_schedule: '医生时间冲突',
+      medical_reason: '医学原因', equipment: '设备故障', other: '其他'
+    };
+    const waitlistStatusMap = {
+      waiting: '候补中', promoted: '已转正', cancelled: '已取消', expired: '已过期'
+    };
+    const waitlistStatusClass = {
+      waiting: 'status-waiting', promoted: 'status-consulting', cancelled: 'status-missed', expired: 'status-returned'
+    };
+    const cancelReasonMap = {
+      patient_refuse: '患者拒绝', patient_no_show: '患者未到',
+      doctor_decision: '医生决定', completed_elsewhere: '外院已做',
+      contraindication: '检查禁忌', other: '其他'
+    };
+
+    let currentEditExamTypeId = null;
+    let currentEditExamSlotId = null;
+    let currentAdminExamOrderId = null;
+    let currentAdminScheduleOrderId = null;
+    let currentAdminCompleteOrderId = null;
+    let currentAdminCancelOrderId = null;
+    let currentAdminRescheduleId = null;
+    let currentAdminRescheduleOrderTypeId = null;
+    let currentAdminWaitlistId = null;
+    let currentAdminWaitlistTypeId = null;
+    let currentEditConfigKey = null;
+
+    function escapeJs(str) {
+      return (str || '').toString().replace(/'/g, "\\'").replace(/"/g, '\\"');
+    }
+
+    async function loadExamTypesAdmin() {
+      try {
+        const result = await api.exam.getTypes('admin');
+        const types = result.types || [];
+        if (types.length === 0) {
+          document.querySelector('#examTypeTable tbody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">暂无检查类型</td></tr>';
+          return;
+        }
+        document.querySelector('#examTypeTable tbody').innerHTML = types.map(t => `
+          <tr>
+            <td>${t.id}</td>
+            <td>${escapeHtml(t.code)}</td>
+            <td>${escapeHtml(t.name)}</td>
+            <td>${t.duration_minutes}分钟</td>
+            <td>${t.is_fasting ? '<span class="status-badge status-missed">是</span>' : '<span class="status-badge status-completed">否</span>'}</td>
+            <td>${t.is_prep_required ? '<span class="status-badge status-called">是</span>' : '<span class="status-badge status-completed">否</span>'}</td>
+            <td>${t.is_active ? '<span class="status-badge status-consulting">启用</span>' : '<span class="status-badge status-missed">停用</span>'}</td>
+            <td>
+              <button class="btn btn-sm btn-primary" onclick="openExamTypeModal(${t.id})">编辑</button>
+              <button class="btn btn-sm ${t.is_active ? 'btn-warning' : 'btn-success'}" onclick="toggleExamType(${t.id}, ${t.is_active ? 0 : 1})">
+                ${t.is_active ? '停用' : '启用'}
+              </button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function addExamType() {
+      const name = document.getElementById('examTypeName').value.trim();
+      const code = document.getElementById('examTypeCode').value.trim();
+      const description = document.getElementById('examTypeDesc').value.trim();
+      const duration_minutes = parseInt(document.getElementById('examTypeDuration').value);
+      const is_fasting = parseInt(document.getElementById('examTypeFasting').value);
+      const is_prep_required = parseInt(document.getElementById('examTypePrep').value);
+      const prep_instructions = document.getElementById('examTypePrepNotes').value.trim();
+      if (!name || !code) return showAlert('请填写名称和代码', 'error');
+      if (!duration_minutes) return showAlert('请填写时长', 'error');
+      try {
+        await api.exam.createType({ name, code, description, duration_minutes, is_fasting, is_prep_required, prep_instructions });
+        showAlert('检查类型添加成功');
+        clearExamTypeForm();
+        loadExamTypesAdmin();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function clearExamTypeForm() {
+      document.getElementById('examTypeName').value = '';
+      document.getElementById('examTypeCode').value = '';
+      document.getElementById('examTypeDesc').value = '';
+      document.getElementById('examTypeDuration').value = '30';
+      document.getElementById('examTypeFasting').value = '0';
+      document.getElementById('examTypePrep').value = '0';
+      document.getElementById('examTypePrepNotes').value = '';
+      currentEditExamTypeId = null;
+      document.getElementById('examTypeSubmitBtn').textContent = '添加检查类型';
+      document.getElementById('examTypeCancelBtn').style.display = 'none';
+    }
+
+    function cancelEditExamType() {
+      clearExamTypeForm();
+    }
+
+    async function toggleExamType(id, isActive) {
+      if (!confirm(`确认${isActive ? '启用' : '停用'}该检查类型？`)) return;
+      try {
+        await api.exam.updateType(id, { is_active: isActive });
+        showAlert('状态更新成功');
+        loadExamTypesAdmin();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function openExamTypeModal(id) {
+      try {
+        const result = await api.exam.getTypes('admin');
+        const type = (result.types || []).find(t => t.id === id);
+        if (!type) return showAlert('未找到检查类型', 'error');
+        currentEditExamTypeId = id;
+        document.getElementById('modalExamTypeName').value = type.name;
+        document.getElementById('modalExamTypeCode').value = type.code;
+        document.getElementById('modalExamTypeDuration').value = type.duration_minutes;
+        document.getElementById('modalExamTypeFasting').value = type.is_fasting ? '1' : '0';
+        document.getElementById('modalExamTypePrep').value = type.is_prep_required ? '1' : '0';
+        document.getElementById('modalExamTypeDesc').value = type.description || '';
+        document.getElementById('modalExamTypePrepNotes').value = type.prep_instructions || '';
+        document.getElementById('examTypeModal').classList.add('active');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function closeExamTypeModal() {
+      currentEditExamTypeId = null;
+      document.getElementById('examTypeModal').classList.remove('active');
+    }
+
+    async function confirmEditExamType() {
+      const name = document.getElementById('modalExamTypeName').value.trim();
+      const code = document.getElementById('modalExamTypeCode').value.trim();
+      const description = document.getElementById('modalExamTypeDesc').value.trim();
+      const duration_minutes = parseInt(document.getElementById('modalExamTypeDuration').value);
+      const is_fasting = parseInt(document.getElementById('modalExamTypeFasting').value);
+      const is_prep_required = parseInt(document.getElementById('modalExamTypePrep').value);
+      const prep_instructions = document.getElementById('modalExamTypePrepNotes').value.trim();
+      if (!name || !code) return showAlert('请填写名称和代码', 'error');
+      if (!duration_minutes) return showAlert('请填写时长', 'error');
+      if (!confirm('确认保存修改？')) return;
+      try {
+        await api.exam.updateType(currentEditExamTypeId, { name, code, description, duration_minutes, is_fasting, is_prep_required, prep_instructions });
+        showAlert('修改成功');
+        closeExamTypeModal();
+        loadExamTypesAdmin();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function loadExamTypesForSlots() {
+      try {
+        const result = await api.exam.getTypes('admin');
+        const types = result.types || [];
+        const filterSel = document.getElementById('examSlotTypeFilter');
+        const formSel = document.getElementById('examSlotType');
+        const modalSel = document.getElementById('modalExamSlotType');
+        const batchSel = document.getElementById('batchSlotType');
+        filterSel.innerHTML = '<option value="">全部</option>' + types.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
+        formSel.innerHTML = types.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
+        modalSel.innerHTML = types.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
+        batchSel.innerHTML = types.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function loadExamTypesForOrders() {
+      try {
+        const result = await api.exam.getTypes('admin');
+        const types = result.types || [];
+        const sel = document.getElementById('examOrderTypeFilterAdmin');
+        sel.innerHTML = '<option value="">全部</option>' + types.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function loadExamSlots() {
+      try {
+        const params = {};
+        const typeId = document.getElementById('examSlotTypeFilter').value;
+        const date = document.getElementById('examSlotDateFilter').value;
+        if (typeId) params.exam_type_id = typeId;
+        if (date) params.date = date;
+        const result = await api.exam.getSlots(params, 'admin');
+        const slots = result.slots || [];
+        if (slots.length === 0) {
+          document.querySelector('#examSlotTable tbody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">暂无检查时段</td></tr>';
+          return;
+        }
+        document.querySelector('#examSlotTable tbody').innerHTML = slots.map(s => `
+          <tr>
+            <td>${s.id}</td>
+            <td>${escapeHtml(s.exam_type_name)}</td>
+            <td>${s.date}</td>
+            <td>${s.start_time}-${s.end_time}</td>
+            <td>${s.booked_count || 0}/${s.capacity}</td>
+            <td>${escapeHtml(s.room || '-')}</td>
+            <td>${s.is_active ? '<span class="status-badge status-consulting">启用</span>' : '<span class="status-badge status-missed">停用</span>'}</td>
+            <td>
+              <button class="btn btn-sm btn-primary" onclick="openExamSlotModal(${s.id})">编辑</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function addExamSlot() {
+      const exam_type_id = parseInt(document.getElementById('examSlotType').value);
+      const date = document.getElementById('examSlotDate').value;
+      const start_time = document.getElementById('examSlotStart').value;
+      const end_time = document.getElementById('examSlotEnd').value;
+      const capacity = parseInt(document.getElementById('examSlotCapacity').value);
+      const room = document.getElementById('examSlotRoom').value.trim();
+      if (!exam_type_id || !date || !start_time || !end_time) return showAlert('请填写完整信息', 'error');
+      if (!capacity) return showAlert('请填写容量', 'error');
+      try {
+        await api.exam.createSlot({ exam_type_id, date, start_time, end_time, capacity, room });
+        showAlert('时段添加成功');
+        clearExamSlotForm();
+        loadExamSlots();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function clearExamSlotForm() {
+      document.getElementById('examSlotDate').value = '';
+      document.getElementById('examSlotStart').value = '';
+      document.getElementById('examSlotEnd').value = '';
+      document.getElementById('examSlotCapacity').value = '10';
+      document.getElementById('examSlotRoom').value = '';
+      currentEditExamSlotId = null;
+      document.getElementById('examSlotSubmitBtn').textContent = '添加时段';
+      document.getElementById('examSlotCancelBtn').style.display = 'none';
+    }
+
+    function cancelEditExamSlot() {
+      clearExamSlotForm();
+    }
+
+    async function openExamSlotModal(id) {
+      try {
+        const result = await api.exam.getSlots({ id }, 'admin');
+        const slot = (result.slots || []).find(s => s.id === id);
+        if (!slot) return showAlert('未找到时段', 'error');
+        currentEditExamSlotId = id;
+        document.getElementById('modalExamSlotType').value = slot.exam_type_id;
+        document.getElementById('modalExamSlotDate').value = slot.date;
+        document.getElementById('modalExamSlotStart').value = slot.start_time;
+        document.getElementById('modalExamSlotEnd').value = slot.end_time;
+        document.getElementById('modalExamSlotCapacity').value = slot.capacity;
+        document.getElementById('modalExamSlotRoom').value = slot.room || '';
+        document.getElementById('examSlotModal').classList.add('active');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function closeExamSlotModal() {
+      currentEditExamSlotId = null;
+      document.getElementById('examSlotModal').classList.remove('active');
+    }
+
+    async function confirmEditExamSlot() {
+      const exam_type_id = parseInt(document.getElementById('modalExamSlotType').value);
+      const date = document.getElementById('modalExamSlotDate').value;
+      const start_time = document.getElementById('modalExamSlotStart').value;
+      const end_time = document.getElementById('modalExamSlotEnd').value;
+      const capacity = parseInt(document.getElementById('modalExamSlotCapacity').value);
+      const room = document.getElementById('modalExamSlotRoom').value.trim();
+      if (!exam_type_id || !date || !start_time || !end_time) return showAlert('请填写完整信息', 'error');
+      if (!capacity) return showAlert('请填写容量', 'error');
+      if (!confirm('确认保存修改？')) return;
+      try {
+        await api.exam.updateSlot(currentEditExamSlotId, { exam_type_id, date, start_time, end_time, capacity, room });
+        showAlert('修改成功');
+        closeExamSlotModal();
+        loadExamSlots();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function openBatchCreateSlotsModal() {
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('batchSlotStartDate').value = today;
+      document.getElementById('batchSlotEndDate').value = today;
+      document.getElementById('batchSlotDailyStart').value = '08:00';
+      document.getElementById('batchSlotDailyEnd').value = '12:00';
+      document.getElementById('batchSlotStep').value = '30';
+      document.getElementById('batchSlotCapacity').value = '10';
+      document.getElementById('batchSlotRoom').value = '';
+      document.getElementById('batchSlotSkipWeekend').value = '1';
+      document.getElementById('batchSlotsModal').classList.add('active');
+    }
+
+    function closeBatchSlotsModal() {
+      document.getElementById('batchSlotsModal').classList.remove('active');
+    }
+
+    async function confirmBatchCreateSlots() {
+      const exam_type_id = parseInt(document.getElementById('batchSlotType').value);
+      const start_date = document.getElementById('batchSlotStartDate').value;
+      const end_date = document.getElementById('batchSlotEndDate').value;
+      const daily_start = document.getElementById('batchSlotDailyStart').value;
+      const daily_end = document.getElementById('batchSlotDailyEnd').value;
+      const step_minutes = parseInt(document.getElementById('batchSlotStep').value);
+      const capacity = parseInt(document.getElementById('batchSlotCapacity').value);
+      const room = document.getElementById('batchSlotRoom').value.trim();
+      const skip_weekend = parseInt(document.getElementById('batchSlotSkipWeekend').value);
+      if (!exam_type_id || !start_date || !end_date || !daily_start || !daily_end) return showAlert('请填写完整信息', 'error');
+      if (!step_minutes || !capacity) return showAlert('请填写步长和容量', 'error');
+      if (!confirm('确认批量生成时段？')) return;
+      try {
+        const slots = [];
+        const start = new Date(start_date);
+        const end = new Date(end_date);
+        const [sh, sm] = daily_start.split(':').map(Number);
+        const [eh, em] = daily_end.split(':').map(Number);
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          if (skip_weekend && (d.getDay() === 0 || d.getDay() === 6)) continue;
+          const dateStr = d.toISOString().split('T')[0];
+          let t = new Date(d);
+          t.setHours(sh, sm, 0, 0);
+          const endT = new Date(d);
+          endT.setHours(eh, em, 0, 0);
+          while (t < endT) {
+            const st = t;
+            const et = new Date(t.getTime() + step_minutes * 60000);
+            if (et > endT) break;
+            const fmt = dt => dt.toTimeString().slice(0, 5);
+            slots.push({ exam_type_id, date: dateStr, start_time: fmt(st), end_time: fmt(et), capacity, room });
+            t = et;
+          }
+        }
+        if (slots.length === 0) return showAlert('没有生成任何时段，请检查参数', 'error');
+        let created = 0;
+        for (const s of slots) {
+          try { await api.exam.createSlot(s); created++; } catch (e) {}
+        }
+        showAlert(`批量生成完成：成功${created}个，失败${slots.length - created}个`);
+        closeBatchSlotsModal();
+        loadExamSlots();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function loadAdminExamOrders() {
+      try {
+        const params = {};
+        const status = document.getElementById('examOrderStatusFilter').value;
+        const typeId = document.getElementById('examOrderTypeFilterAdmin').value;
+        const startDate = document.getElementById('examOrderStartDateAdmin').value;
+        const endDate = document.getElementById('examOrderEndDateAdmin').value;
+        const keyword = document.getElementById('examOrderKeyword').value.trim();
+        if (status) params.status = status;
+        if (typeId) params.exam_type_id = typeId;
+        if (startDate) params.start_date = startDate;
+        if (endDate) params.end_date = endDate;
+        if (keyword) params.keyword = keyword;
+        const result = await api.exam.getOrders(params, 'admin');
+        const orders = result.orders || [];
+        if (orders.length === 0) {
+          document.querySelector('#adminExamOrderTable tbody').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">暂无检查单</td></tr>';
+          return;
+        }
+        document.querySelector('#adminExamOrderTable tbody').innerHTML = orders.map(o => `
+          <tr>
+            <td>${escapeHtml(o.order_no)}</td>
+            <td>${escapeHtml(o.patient_name)}</td>
+            <td>${escapeHtml(o.exam_type_name)}</td>
+            <td>${o.scheduled_slot ? o.scheduled_slot.date + ' ' + o.scheduled_slot.start_time : '<span style="color:#999;">未排班</span>'}</td>
+            <td><span class="status-badge ${priorityClass[o.priority]}">${priorityMap[o.priority]}</span></td>
+            <td><span class="status-badge ${examOrderStatusClass[o.status]}">${examOrderStatusMap[o.status]}</span></td>
+            <td>${escapeHtml(o.doctor_name || '-')}</td>
+            <td>${o.created_at ? o.created_at.slice(0, 16) : '-'}</td>
+            <td>
+              <div class="btn-group">
+                <button class="btn btn-sm btn-default" onclick="showAdminExamDetail(${o.id})">详情</button>
+                ${o.status === 'pending' ? `<button class="btn btn-sm btn-primary" onclick="openAdminExamScheduleModal(${o.id})">预约</button>` : ''}
+                ${o.status === 'scheduled' ? `<button class="btn btn-sm btn-success" onclick="openAdminExamCompleteModal(${o.id})">完成</button>` : ''}
+                ${(o.status === 'pending' || o.status === 'scheduled' || o.status === 'rescheduling') ? `<button class="btn btn-sm btn-danger" onclick="openAdminExamCancelModal(${o.id})">取消</button>` : ''}
+              </div>
+            </td>
+          </tr>
+        `).join('');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function showAdminExamDetail(orderId) {
+      try {
+        const result = await api.exam.getOrderDetail(orderId, 'admin');
+        const o = result.order;
+        const logs = result.change_logs || [];
+        let html = `
+          <div style="margin-bottom:15px;padding:12px;background:#f5f5f5;border-radius:4px;">
+            <p><strong>检查单号：</strong>${escapeHtml(o.order_no)} &nbsp; <strong>状态：</strong><span class="status-badge ${examOrderStatusClass[o.status]}">${examOrderStatusMap[o.status]}</span></p>
+            <p><strong>患者：</strong>${escapeHtml(o.patient_name)} (${o.patient_gender}, ${o.patient_age}岁) &nbsp; <strong>身份证：</strong>${escapeHtml(o.patient_id_card)}</p>
+            <p><strong>电话：</strong>${escapeHtml(o.patient_phone || '-')}</p>
+            <p><strong>检查类型：</strong>${escapeHtml(o.exam_type_name)} &nbsp; <strong>优先级：</strong>${priorityMap[o.priority]}</p>
+            <p><strong>临床诊断：</strong>${escapeHtml(o.clinical_diagnosis || '-')}</p>
+            <p><strong>开单医生：</strong>${escapeHtml(o.doctor_name || '-')}</p>
+            ${o.scheduled_slot ? `<p><strong>预约时段：</strong>${o.scheduled_slot.date} ${o.scheduled_slot.start_time}-${o.scheduled_slot.end_time} ${escapeHtml(o.scheduled_slot.room || '')}</p>` : ''}
+            ${o.cancel_reason ? `<p><strong>取消原因：</strong>${cancelReasonMap[o.cancel_reason] || o.cancel_reason} ${o.cancel_notes ? ' - ' + escapeHtml(o.cancel_notes) : ''}</p>` : ''}
+            ${o.result ? `<p><strong>检查结果：</strong>${escapeHtml(o.result)}</p>` : ''}
+            ${o.notes ? `<p><strong>备注：</strong>${escapeHtml(o.notes)}</p>` : ''}
+          </div>
+          <h4 style="color:#096dd9;margin-bottom:10px;">变更记录</h4>
+          <table>
+            <thead><tr><th>时间</th><th>变更类型</th><th>操作人</th><th>详情</th></tr></thead>
+            <tbody>
+        `;
+        if (logs.length === 0) {
+          html += '<tr><td colspan="4" style="text-align:center;color:#999;">暂无变更记录</td></tr>';
+        } else {
+          html += logs.map(l => `<tr><td>${l.created_at.slice(0,16)}</td><td>${escapeHtml(l.change_type)}</td><td>${escapeHtml(l.operator_name || '-')}</td><td>${escapeHtml(l.details || '-')}</td></tr>`).join('');
+        }
+        html += '</tbody></table>';
+        document.getElementById('adminExamDetailContent').innerHTML = html;
+        document.getElementById('adminExamDetailModal').classList.add('active');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function closeAdminExamDetailModal() {
+      document.getElementById('adminExamDetailModal').classList.remove('active');
+    }
+
+    async function openAdminExamScheduleModal(orderId) {
+      try {
+        currentAdminScheduleOrderId = orderId;
+        const result = await api.exam.getOrderDetail(orderId, 'admin');
+        const o = result.order;
+        document.getElementById('adminExamScheduleInfo').innerHTML = `
+          <p style="margin-bottom:12px;padding:10px;background:#f5f5f5;border-radius:4px;">
+            <strong>${escapeHtml(o.order_no)}</strong> - ${escapeHtml(o.patient_name)} - ${escapeHtml(o.exam_type_name)}
+          </p>
+        `;
+        const today = new Date().toISOString().slice(0, 10);
+        document.getElementById('adminScheduleSlotDate').value = today;
+        currentAdminScheduleOrderId = orderId;
+        await loadAdminScheduleSlots();
+        document.getElementById('adminExamScheduleModal').classList.add('active');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function closeAdminExamScheduleModal() {
+      currentAdminScheduleOrderId = null;
+      document.getElementById('adminExamScheduleModal').classList.remove('active');
+    }
+
+    async function loadAdminScheduleSlots() {
+      if (!currentAdminScheduleOrderId) return;
+      try {
+        const detail = await api.exam.getOrderDetail(currentAdminScheduleOrderId, 'admin');
+        const date = document.getElementById('adminScheduleSlotDate').value;
+        if (!date) return;
+        const result = await api.exam.getSlots({ exam_type_id: detail.order.exam_type_id, date, available_only: 1 }, 'admin');
+        const slots = result.slots || [];
+        const container = document.getElementById('adminScheduleSlotsContainer');
+        if (slots.length === 0) {
+          container.innerHTML = '<p style="color:#999;text-align:center;padding:20px;">该日期暂无可用时段</p>';
+          return;
+        }
+        container.innerHTML = `
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;">
+            ${slots.map(s => `
+              <button class="btn ${s.remaining_count > 0 ? 'btn-default' : 'btn-default'}" 
+                style="${s.remaining_count > 0 ? 'background:#f6ffed;color:#52c41a;' : 'background:#f0f0f0;color:#999;opacity:0.6;'}"
+                ${s.remaining_count > 0 ? `onclick="confirmAdminScheduleSlot(${s.id})"` : 'disabled'}>
+                ${s.start_time}-${s.end_time}<br>
+                <small>${s.remaining_count}/${s.capacity} 剩余</small>
+              </button>
+            `).join('')}
+          </div>
+        `;
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function confirmAdminScheduleSlot(slotId) {
+      if (!confirm('确认预约该时段？')) return;
+      try {
+        await api.exam.scheduleOrder(currentAdminScheduleOrderId, slotId, 'admin');
+        showAlert('预约成功');
+        closeAdminExamScheduleModal();
+        loadAdminExamOrders();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function openAdminExamCompleteModal(orderId) {
+      try {
+        currentAdminCompleteOrderId = orderId;
+        const result = await api.exam.getOrderDetail(orderId, 'admin');
+        const o = result.order;
+        document.getElementById('adminExamCompleteInfo').innerHTML = `
+          <p style="margin-bottom:12px;padding:10px;background:#f6ffed;border-radius:4px;">
+            <strong>${escapeHtml(o.order_no)}</strong> - ${escapeHtml(o.patient_name)} - ${escapeHtml(o.exam_type_name)}<br>
+            时段：${o.scheduled_slot.date} ${o.scheduled_slot.start_time}-${o.scheduled_slot.end_time}
+          </p>
+        `;
+        document.getElementById('adminExamResult').value = '';
+        document.getElementById('adminExamCompleteModal').classList.add('active');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function closeAdminExamCompleteModal() {
+      currentAdminCompleteOrderId = null;
+      document.getElementById('adminExamCompleteModal').classList.remove('active');
+    }
+
+    async function confirmAdminExamComplete() {
+      const result = document.getElementById('adminExamResult').value.trim();
+      if (!confirm('确认完成该检查？')) return;
+      try {
+        await api.exam.completeOrder(currentAdminCompleteOrderId, result, 'admin');
+        showAlert('检查已完成');
+        closeAdminExamCompleteModal();
+        loadAdminExamOrders();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function openAdminExamCancelModal(orderId) {
+      try {
+        currentAdminCancelOrderId = orderId;
+        const result = await api.exam.getOrderDetail(orderId, 'admin');
+        const o = result.order;
+        document.getElementById('adminExamCancelInfo').innerHTML = `
+          <p style="margin-bottom:12px;padding:10px;background:#fff1f0;border-radius:4px;">
+            <strong>${escapeHtml(o.order_no)}</strong> - ${escapeHtml(o.patient_name)} - ${escapeHtml(o.exam_type_name)}<br>
+            当前状态：<span class="status-badge ${examOrderStatusClass[o.status]}">${examOrderStatusMap[o.status]}</span>
+            ${o.scheduled_slot ? `<br>原时段：${o.scheduled_slot.date} ${o.scheduled_slot.start_time}-${o.scheduled_slot.end_time}` : ''}
+          </p>
+        `;
+        document.getElementById('adminExamCancelReason').value = '';
+        document.getElementById('adminExamCancelNotes').value = '';
+        document.getElementById('adminExamCancelModal').classList.add('active');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function closeAdminExamCancelModal() {
+      currentAdminCancelOrderId = null;
+      document.getElementById('adminExamCancelModal').classList.remove('active');
+    }
+
+    async function confirmAdminExamCancel() {
+      const reason = document.getElementById('adminExamCancelReason').value;
+      const notes = document.getElementById('adminExamCancelNotes').value.trim();
+      if (!reason) return showAlert('请选择取消原因', 'error');
+      if (!confirm('确认取消该检查单？此操作将释放预约名额。')) return;
+      try {
+        await api.exam.cancelOrder(currentAdminCancelOrderId, reason + (notes ? ' - ' + notes : ''), 'admin');
+        showAlert('检查单已取消');
+        closeAdminExamCancelModal();
+        loadAdminExamOrders();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function loadAdminReschedule() {
+      try {
+        const params = {};
+        const status = document.getElementById('adminRescheduleStatusFilter').value;
+        if (status) params.status = status;
+        const result = await api.exam.getReschedule(params, 'admin');
+        const reqs = result.requests || [];
+        if (reqs.length === 0) {
+          document.querySelector('#adminRescheduleTable tbody').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">暂无改约申请</td></tr>';
+          return;
+        }
+        document.querySelector('#adminRescheduleTable tbody').innerHTML = reqs.map(r => `
+          <tr>
+            <td>#${r.id}</td>
+            <td>${escapeHtml(r.order_no)}</td>
+            <td>${escapeHtml(r.patient_name)}</td>
+            <td>${r.original_slot ? r.original_slot.date + ' ' + r.original_slot.start_time : '-'}</td>
+            <td>${r.desired_start_date} ~ ${r.desired_end_date}</td>
+            <td>${reasonMap[r.reason] || r.reason}</td>
+            <td><span class="status-badge ${rescheduleStatusClass[r.status]}">${rescheduleStatusMap[r.status]}</span></td>
+            <td>${r.created_at.slice(0,16)}</td>
+            <td>
+              ${r.status === 'pending' ? `
+                <button class="btn btn-sm btn-success" onclick="openAdminRescheduleApproveModal(${r.id}, ${r.exam_type_id})">通过</button>
+                <button class="btn btn-sm btn-danger" onclick="openAdminRescheduleRejectModal(${r.id})">驳回</button>
+              ` : ''}
+              ${r.status === 'approved' ? `
+                <button class="btn btn-sm btn-warning" onclick="openAdminRescheduleRevertModal(${r.id})">撤回</button>
+              ` : '-'}
+            </td>
+          </tr>
+        `).join('');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function openAdminRescheduleApproveModal(id, typeId) {
+      try {
+        currentAdminRescheduleId = id;
+        currentAdminRescheduleOrderTypeId = typeId;
+        const result = await api.exam.getReschedule({ id }, 'admin');
+        const req = (result.requests || []).find(r => r.id === id);
+        if (!req) return showAlert('未找到申请', 'error');
+        document.getElementById('adminRescheduleApproveInfo').innerHTML = `
+          <p style="margin-bottom:12px;padding:10px;background:#f6ffed;border-radius:4px;">
+            <strong>${escapeHtml(req.order_no)}</strong> - ${escapeHtml(req.patient_name)}<br>
+            原时段：${req.original_slot ? req.original_slot.date + ' ' + req.original_slot.start_time : '-'}<br>
+            期望日期：${req.desired_start_date} ~ ${req.desired_end_date}
+          </p>
+        `;
+        const today = new Date().toISOString().slice(0, 10);
+        document.getElementById('adminRescheduleSlotDate').value = today;
+        document.getElementById('adminRescheduleApproveNotes').value = '';
+        await loadAdminRescheduleSlots();
+        document.getElementById('adminRescheduleApproveModal').classList.add('active');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function closeAdminRescheduleApproveModal() {
+      currentAdminRescheduleId = null;
+      currentAdminRescheduleOrderTypeId = null;
+      document.getElementById('adminRescheduleApproveModal').classList.remove('active');
+    }
+
+    async function loadAdminRescheduleSlots() {
+      if (!currentAdminRescheduleOrderTypeId) return;
+      try {
+        const date = document.getElementById('adminRescheduleSlotDate').value;
+        if (!date) return;
+        const result = await api.exam.getSlots({ exam_type_id: currentAdminRescheduleOrderTypeId, date, available_only: 1 }, 'admin');
+        const slots = result.slots || [];
+        const container = document.getElementById('adminRescheduleSlotsContainer');
+        if (slots.length === 0) {
+          container.innerHTML = '<p style="color:#999;text-align:center;padding:20px;">该日期暂无可用时段</p>';
+          return;
+        }
+        container.innerHTML = `
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:10px;">
+            ${slots.map(s => `
+              <label style="padding:8px;border:1px solid #ddd;border-radius:4px;cursor:pointer;${s.remaining_count > 0 ? '' : 'opacity:0.5;'}">
+                <input type="radio" name="rescheduleSlot" value="${s.id}" ${s.remaining_count > 0 ? '' : 'disabled'}>
+                ${s.start_time}-${s.end_time}<br>
+                <small>${s.remaining_count}/${s.capacity} 剩余</small>
+              </label>
+            `).join('')}
+          </div>
+        `;
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function confirmAdminRescheduleApprove() {
+      const slotRadio = document.querySelector('input[name="rescheduleSlot"]:checked');
+      if (!slotRadio) return showAlert('请选择新时段', 'error');
+      const reviewNotes = document.getElementById('adminRescheduleApproveNotes').value.trim();
+      if (!confirm('确认通过该改约申请？')) return;
+      try {
+        await api.exam.approveReschedule(currentAdminRescheduleId, slotRadio.value, reviewNotes, 'admin');
+        showAlert('改约已通过');
+        closeAdminRescheduleApproveModal();
+        loadAdminReschedule();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function openAdminRescheduleRejectModal(id) {
+      currentAdminRescheduleId = id;
+      document.getElementById('adminRescheduleRejectInfo').innerHTML = `<p>申请ID：#${id}</p>`;
+      document.getElementById('adminRescheduleRejectNotes').value = '';
+      document.getElementById('adminRescheduleRejectModal').classList.add('active');
+    }
+
+    function closeAdminRescheduleRejectModal() {
+      currentAdminRescheduleId = null;
+      document.getElementById('adminRescheduleRejectModal').classList.remove('active');
+    }
+
+    async function confirmAdminRescheduleReject() {
+      const reviewNotes = document.getElementById('adminRescheduleRejectNotes').value.trim();
+      if (!reviewNotes) return showAlert('请输入驳回原因', 'error');
+      if (!confirm('确认驳回该改约申请？')) return;
+      try {
+        await api.exam.rejectReschedule(currentAdminRescheduleId, reviewNotes, 'admin');
+        showAlert('已驳回');
+        closeAdminRescheduleRejectModal();
+        loadAdminReschedule();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function openAdminRescheduleRevertModal(id) {
+      currentAdminRescheduleId = id;
+      document.getElementById('adminRescheduleRevertInfo').innerHTML = `<p>申请ID：#${id}</p>`;
+      document.getElementById('adminRescheduleRevertNotes').value = '';
+      document.getElementById('adminRescheduleRevertModal').classList.add('active');
+    }
+
+    function closeAdminRescheduleRevertModal() {
+      currentAdminRescheduleId = null;
+      document.getElementById('adminRescheduleRevertModal').classList.remove('active');
+    }
+
+    async function confirmAdminRescheduleRevert() {
+      const revertReason = document.getElementById('adminRescheduleRevertNotes').value.trim();
+      if (!revertReason) return showAlert('请输入撤回原因', 'error');
+      if (!confirm('确认撤回该已通过的改约？')) return;
+      try {
+        await api.exam.revertReschedule(currentAdminRescheduleId, revertReason, 'admin');
+        showAlert('已撤回');
+        closeAdminRescheduleRevertModal();
+        loadAdminReschedule();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function loadAdminWaitlist() {
+      try {
+        const params = {};
+        const status = document.getElementById('adminWaitlistStatusFilter').value;
+        if (status) params.status = status;
+        const result = await api.exam.getWaitlist(params, 'admin');
+        const items = result.items || [];
+        if (items.length === 0) {
+          document.querySelector('#adminWaitlistTable tbody').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">暂无候补记录</td></tr>';
+          return;
+        }
+        document.querySelector('#adminWaitlistTable tbody').innerHTML = items.map(w => `
+          <tr>
+            <td>#${w.id}</td>
+            <td>${escapeHtml(w.order_no)}</td>
+            <td>${escapeHtml(w.patient_name)}</td>
+            <td>${escapeHtml(w.exam_type_name)}</td>
+            <td>${w.target_date}</td>
+            <td><span class="status-badge ${priorityClass[w.priority]}">${priorityMap[w.priority]}</span></td>
+            <td><span class="status-badge ${waitlistStatusClass[w.status]}">${waitlistStatusMap[w.status]}</span></td>
+            <td>${w.created_at.slice(0,16)}</td>
+            <td>
+              ${w.status === 'waiting' ? `
+                <button class="btn btn-sm btn-success" onclick="openAdminWaitlistPromoteModal(${w.id}, ${w.exam_type_id})">转正</button>
+                <button class="btn btn-sm btn-danger" onclick="openAdminWaitlistCancelModal(${w.id})">取消</button>
+              ` : '-'}
+            </td>
+          </tr>
+        `).join('');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function openAdminWaitlistPromoteModal(id, typeId) {
+      currentAdminWaitlistId = id;
+      currentAdminWaitlistTypeId = typeId;
+      document.getElementById('adminWaitlistPromoteInfo').innerHTML = `<p>候补ID：#${id}</p>`;
+      const today = new Date().toISOString().slice(0, 10);
+      document.getElementById('adminWaitlistSlotDate').value = today;
+      loadAdminWaitlistSlots();
+      document.getElementById('adminWaitlistPromoteModal').classList.add('active');
+    }
+
+    function closeAdminWaitlistPromoteModal() {
+      currentAdminWaitlistId = null;
+      currentAdminWaitlistTypeId = null;
+      document.getElementById('adminWaitlistPromoteModal').classList.remove('active');
+    }
+
+    async function loadAdminWaitlistSlots() {
+      if (!currentAdminWaitlistTypeId) return;
+      try {
+        const date = document.getElementById('adminWaitlistSlotDate').value;
+        if (!date) return;
+        const result = await api.exam.getSlots({ exam_type_id: currentAdminWaitlistTypeId, date, available_only: 1 }, 'admin');
+        const slots = result.slots || [];
+        const container = document.getElementById('adminWaitlistSlotsContainer');
+        if (slots.length === 0) {
+          container.innerHTML = '<p style="color:#999;text-align:center;padding:20px;">该日期暂无可用时段</p>';
+          return;
+        }
+        container.innerHTML = `
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:10px;">
+            ${slots.map(s => `
+              <label style="padding:8px;border:1px solid #ddd;border-radius:4px;cursor:pointer;${s.remaining_count > 0 ? '' : 'opacity:0.5;'}">
+                <input type="radio" name="waitlistSlot" value="${s.id}" ${s.remaining_count > 0 ? '' : 'disabled'}>
+                ${s.start_time}-${s.end_time}<br>
+                <small>${s.remaining_count}/${s.capacity} 剩余</small>
+              </label>
+            `).join('')}
+          </div>
+        `;
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function confirmAdminWaitlistPromote() {
+      const slotRadio = document.querySelector('input[name="waitlistSlot"]:checked');
+      if (!slotRadio) return showAlert('请选择转正时段', 'error');
+      if (!confirm('确认将该候补转正？')) return;
+      try {
+        await api.exam.promoteWaitlist(currentAdminWaitlistId, slotRadio.value, 'admin');
+        showAlert('候补已转正');
+        closeAdminWaitlistPromoteModal();
+        loadAdminWaitlist();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function openAdminWaitlistCancelModal(id) {
+      currentAdminWaitlistId = id;
+      document.getElementById('adminWaitlistCancelInfo').innerHTML = `<p>候补ID：#${id}</p>`;
+      document.getElementById('adminWaitlistCancelNotes').value = '';
+      document.getElementById('adminWaitlistCancelModal').classList.add('active');
+    }
+
+    function closeAdminWaitlistCancelModal() {
+      currentAdminWaitlistId = null;
+      document.getElementById('adminWaitlistCancelModal').classList.remove('active');
+    }
+
+    async function confirmAdminWaitlistCancel() {
+      const cancelReason = document.getElementById('adminWaitlistCancelNotes').value.trim();
+      if (!cancelReason) return showAlert('请输入取消原因', 'error');
+      if (!confirm('确认取消该候补？')) return;
+      try {
+        await api.exam.cancelWaitlist(currentAdminWaitlistId, cancelReason, 'admin');
+        showAlert('候补已取消');
+        closeAdminWaitlistCancelModal();
+        loadAdminWaitlist();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function loadExamConfigs() {
+      try {
+        const result = await api.exam.getConfigs();
+        const configs = result.configs || [];
+        if (configs.length === 0) {
+          document.querySelector('#examConfigTable tbody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;">暂无配置</td></tr>';
+          return;
+        }
+        document.querySelector('#examConfigTable tbody').innerHTML = configs.map(c => `
+          <tr style="cursor:pointer;" onclick="openExamConfigModal('${escapeHtml(c.config_key)}')">
+            <td>${escapeHtml(c.config_key)}</td>
+            <td>${escapeHtml(c.config_value)}</td>
+            <td>${escapeHtml(c.description || '-')}</td>
+            <td>
+              <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); openExamConfigModal('${escapeHtml(c.config_key)}')">编辑</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function openExamConfigModal(key) {
+      currentEditConfigKey = key;
+      document.getElementById('modalConfigKey').value = key;
+      document.getElementById('modalConfigValue').value = '';
+      document.getElementById('modalConfigDesc').value = '';
+      api.exam.getConfigs().then(result => {
+        const config = (result.configs || []).find(c => c.config_key === key);
+        if (config) {
+          document.getElementById('modalConfigValue').value = config.config_value;
+          document.getElementById('modalConfigDesc').value = config.description || '';
+        }
+      }).catch(e => showAlert(e.message, 'error'));
+      document.getElementById('examConfigModal').classList.add('active');
+    }
+
+    function closeExamConfigModal() {
+      currentEditConfigKey = null;
+      document.getElementById('examConfigModal').classList.remove('active');
+    }
+
+    async function confirmEditExamConfig() {
+      const value = document.getElementById('modalConfigValue').value.trim();
+      const description = document.getElementById('modalConfigDesc').value.trim();
+      if (!value) return showAlert('请填写Value', 'error');
+      if (!confirm('确认保存配置？')) return;
+      try {
+        await api.exam.updateConfig(currentEditConfigKey, value, description);
+        showAlert('配置已保存');
+        closeExamConfigModal();
+        loadExamConfigs();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function exportExamOrdersCSV() {
+      const params = {};
+      const status = document.getElementById('examOrderStatusFilter').value;
+      const typeId = document.getElementById('examOrderTypeFilterAdmin').value;
+      const startDate = document.getElementById('examOrderStartDateAdmin').value;
+      const endDate = document.getElementById('examOrderEndDateAdmin').value;
+      const keyword = document.getElementById('examOrderKeyword').value.trim();
+      if (status) params.status = status;
+      if (typeId) params.exam_type_id = typeId;
+      if (startDate) params.start_date = startDate;
+      if (endDate) params.end_date = endDate;
+      if (keyword) params.keyword = keyword;
+      window.open(api.exam.exportOrders(params), '_blank');
+    }
+
+    function exportExamRescheduleCSV() {
+      const params = {};
+      window.open(api.exam.exportReschedule(params), '_blank');
+    }
+
+    function exportExamWaitlistCSV() {
+      const params = {};
+      window.open(api.exam.exportWaitlist(params), '_blank');
+    }
 
     loadDepartments();
     loadDeptSelects();

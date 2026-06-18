@@ -15,6 +15,29 @@ const {
   updateFollowupStatus,
   generateFollowupCSV
 } = require('../utils/followup');
+const {
+  createExamOrder,
+  scheduleExamOrder,
+  approveReschedule,
+  rejectReschedule,
+  revertReschedule,
+  listExamOrders,
+  getExamOrderDetail,
+  listRescheduleRequests,
+  listWaitlist,
+  promoteWaitlist,
+  cancelWaitlist,
+  listExamSlots,
+  listTodayExecutions,
+  listExamTypes,
+  completeExamOrder,
+  cancelExamOrder,
+  listConfigs,
+  updateConfig,
+  generateExamCSV,
+  generateRescheduleCSV,
+  generateWaitlistCSV
+} = require('../utils/exam');
 
 const router = express.Router();
 
@@ -524,6 +547,266 @@ router.post('/followup/:id/cancel', (req, res) => {
     return res.status(400).json({ success: false, error: '取消原因不能为空' });
   }
   const result = updateFollowupStatus(parseInt(req.params.id), 'cancelled', { cancel_reason }, req.user.id, req.user.role, req.ip);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/exam/types', (req, res) => {
+  const result = listExamTypes();
+  res.json(result);
+});
+
+router.post('/exam/types', (req, res) => {
+  const { name, code, department_id, description, default_duration } = req.body;
+  if (!name || !code || !department_id) {
+    return res.status(400).json({ success: false, error: '名称、代码和科室ID不能为空' });
+  }
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO exam_types (name, code, department_id, description, default_duration)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(name, code, department_id, description || null, default_duration || 15);
+    logAudit(req.user.id, 'create_exam_type', 'exam_type', result.lastInsertRowid, { name, code, department_id }, req.ip);
+    res.json({ success: true, id: result.lastInsertRowid });
+  } catch (e) {
+    return res.status(400).json({ success: false, error: e.message });
+  }
+});
+
+router.put('/exam/types/:id', (req, res) => {
+  const { name, code, description, default_duration, is_active } = req.body;
+  try {
+    db.prepare(`
+      UPDATE exam_types SET 
+        name = COALESCE(?, name),
+        code = COALESCE(?, code),
+        description = COALESCE(?, description),
+        default_duration = COALESCE(?, default_duration),
+        is_active = COALESCE(?, is_active)
+      WHERE id = ?
+    `).run(name, code, description, default_duration, is_active, req.params.id);
+    logAudit(req.user.id, 'update_exam_type', 'exam_type', req.params.id, req.body, req.ip);
+    res.json({ success: true });
+  } catch (e) {
+    return res.status(400).json({ success: false, error: e.message });
+  }
+});
+
+router.get('/exam/configs', (req, res) => {
+  const result = listConfigs();
+  res.json(result);
+});
+
+router.post('/exam/configs', (req, res) => {
+  const { key, value, description } = req.body;
+  if (!key || value == null) {
+    return res.status(400).json({ success: false, error: '配置key和value不能为空' });
+  }
+  const result = updateConfig(key, value, description, req.user.id);
+  logAudit(req.user.id, 'update_exam_config', 'exam_config', null, { key, value, description }, req.ip);
+  res.json(result);
+});
+
+router.get('/exam/today', (req, res) => {
+  const date = req.query.date || new Date().toISOString().split('T')[0];
+  const result = listTodayExecutions(date);
+  res.json(result);
+});
+
+router.get('/exam/orders', (req, res) => {
+  const result = listExamOrders(req.query, req.user.id, req.user.role);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/exam/orders/export', (req, res) => {
+  const result = generateExamCSV(req.query);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+  res.send('\uFEFF' + result.content);
+});
+
+router.get('/exam/orders/:id', (req, res) => {
+  const result = getExamOrderDetail(parseInt(req.params.id), req.user.id, req.user.role);
+  if (!result.success) {
+    const statusCode = result.code || 404;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/orders', (req, res) => {
+  const result = createExamOrder(req.body, req.user.id, req.ip);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/orders/:id/schedule', (req, res) => {
+  const { slot_id } = req.body;
+  if (!slot_id) {
+    return res.status(400).json({ success: false, error: '时段ID不能为空' });
+  }
+  const result = scheduleExamOrder(parseInt(req.params.id), parseInt(slot_id), req.user.id, req.user.role, req.ip);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/orders/:id/complete', (req, res) => {
+  const { result: examResult } = req.body;
+  const result = completeExamOrder(parseInt(req.params.id), req.user.id, req.user.role, req.ip, examResult);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/orders/:id/cancel', (req, res) => {
+  const { cancel_reason } = req.body;
+  if (!cancel_reason) {
+    return res.status(400).json({ success: false, error: '取消原因不能为空' });
+  }
+  const result = cancelExamOrder(parseInt(req.params.id), req.user.id, req.user.role, req.ip, cancel_reason);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/exam/slots', (req, res) => {
+  const result = listExamSlots(req.query);
+  res.json(result);
+});
+
+router.post('/exam/slots', (req, res) => {
+  const { exam_type_id, date, start_time, end_time, total_capacity, waitlist_limit } = req.body;
+  if (!exam_type_id || !date || !start_time || !end_time) {
+    return res.status(400).json({ success: false, error: '检查类型、日期、开始和结束时间不能为空' });
+  }
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO exam_slots (exam_type_id, date, start_time, end_time, total_capacity, waitlist_limit, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(exam_type_id, date, start_time, end_time, total_capacity || 1, waitlist_limit || 3, req.user.id);
+    logAudit(req.user.id, 'create_exam_slot', 'exam_slot', result.lastInsertRowid, req.body, req.ip);
+    res.json({ success: true, id: result.lastInsertRowid });
+  } catch (e) {
+    return res.status(400).json({ success: false, error: e.message });
+  }
+});
+
+router.put('/exam/slots/:id', (req, res) => {
+  const { total_capacity, waitlist_limit, status } = req.body;
+  try {
+    db.prepare(`
+      UPDATE exam_slots SET 
+        total_capacity = COALESCE(?, total_capacity),
+        waitlist_limit = COALESCE(?, waitlist_limit),
+        status = COALESCE(?, status),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(total_capacity, waitlist_limit, status, req.params.id);
+    logAudit(req.user.id, 'update_exam_slot', 'exam_slot', req.params.id, req.body, req.ip);
+    res.json({ success: true });
+  } catch (e) {
+    return res.status(400).json({ success: false, error: e.message });
+  }
+});
+
+router.get('/exam/reschedule', (req, res) => {
+  const result = listRescheduleRequests(req.query, req.user.id, req.user.role);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/exam/reschedule/export', (req, res) => {
+  const result = generateRescheduleCSV(req.query);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+  res.send('\uFEFF' + result.content);
+});
+
+router.post('/exam/reschedule/:id/approve', (req, res) => {
+  const { slot_id, review_notes } = req.body;
+  const result = approveReschedule(parseInt(req.params.id), req.user.id, req.user.role, req.ip, slot_id ? parseInt(slot_id) : null, review_notes);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/reschedule/:id/reject', (req, res) => {
+  const { review_notes } = req.body;
+  const result = rejectReschedule(parseInt(req.params.id), req.user.id, req.user.role, req.ip, review_notes);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/reschedule/:id/revert', (req, res) => {
+  const { revert_reason } = req.body;
+  const result = revertReschedule(parseInt(req.params.id), req.user.id, req.user.role, req.ip, revert_reason);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/exam/waitlist', (req, res) => {
+  const result = listWaitlist(req.query);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/exam/waitlist/export', (req, res) => {
+  const result = generateWaitlistCSV(req.query);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+  res.send('\uFEFF' + result.content);
+});
+
+router.post('/exam/waitlist/:id/promote', (req, res) => {
+  const result = promoteWaitlist(parseInt(req.params.id), req.user.id, req.user.role, req.ip);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/waitlist/:id/cancel', (req, res) => {
+  const { cancel_reason } = req.body;
+  const result = cancelWaitlist(parseInt(req.params.id), req.user.id, req.user.role, req.ip, cancel_reason);
   if (!result.success) {
     const statusCode = result.code || 400;
     return res.status(statusCode).json(result);

@@ -390,4 +390,218 @@ if (!batchColumns2.includes('precheck_failed_count')) {
   `);
 }
 
+const examInitSql = `
+CREATE TABLE IF NOT EXISTS exam_types (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL,
+  code TEXT UNIQUE NOT NULL,
+  department_id INTEGER NOT NULL,
+  description TEXT,
+  default_duration INTEGER NOT NULL DEFAULT 15,
+  is_active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (department_id) REFERENCES departments(id)
+);
+
+CREATE TABLE IF NOT EXISTS exam_slots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  exam_type_id INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  total_capacity INTEGER NOT NULL DEFAULT 1,
+  booked_count INTEGER NOT NULL DEFAULT 0,
+  waitlist_limit INTEGER NOT NULL DEFAULT 3,
+  status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available', 'full', 'closed', 'cancelled')),
+  created_by INTEGER,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (exam_type_id) REFERENCES exam_types(id),
+  FOREIGN KEY (created_by) REFERENCES users(id),
+  UNIQUE(exam_type_id, date, start_time)
+);
+
+CREATE TABLE IF NOT EXISTS exam_orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_no TEXT UNIQUE NOT NULL,
+  patient_id INTEGER NOT NULL,
+  exam_type_id INTEGER NOT NULL,
+  department_id INTEGER NOT NULL,
+  consultation_record_id INTEGER,
+  queue_record_id INTEGER,
+  ordered_by INTEGER NOT NULL,
+  clinical_indication TEXT,
+  urgency TEXT NOT NULL DEFAULT 'normal' CHECK(urgency IN ('normal', 'urgent', 'emergency')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN (
+    'pending', 'scheduled', 'rescheduling', 'completed', 'cancelled', 'rejected'
+  )),
+  scheduled_slot_id INTEGER,
+  result TEXT,
+  notes TEXT,
+  cancel_reason TEXT,
+  cancelled_by INTEGER,
+  cancelled_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (patient_id) REFERENCES patients(id),
+  FOREIGN KEY (exam_type_id) REFERENCES exam_types(id),
+  FOREIGN KEY (department_id) REFERENCES departments(id),
+  FOREIGN KEY (consultation_record_id) REFERENCES consultation_records(id),
+  FOREIGN KEY (queue_record_id) REFERENCES queue_records(id),
+  FOREIGN KEY (ordered_by) REFERENCES users(id),
+  FOREIGN KEY (scheduled_slot_id) REFERENCES exam_slots(id),
+  FOREIGN KEY (cancelled_by) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS exam_reschedule_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_no TEXT UNIQUE NOT NULL,
+  exam_order_id INTEGER NOT NULL,
+  patient_id INTEGER NOT NULL,
+  exam_type_id INTEGER NOT NULL,
+  original_slot_id INTEGER NOT NULL,
+  requested_start_date TEXT NOT NULL,
+  requested_end_date TEXT NOT NULL,
+  preferred_time TEXT,
+  reason TEXT NOT NULL,
+  remarks TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN (
+    'pending', 'approved', 'rejected', 'cancelled', 'reverted'
+  )),
+  requested_by INTEGER NOT NULL,
+  reviewed_by INTEGER,
+  reviewed_at DATETIME,
+  review_notes TEXT,
+  new_slot_id INTEGER,
+  reverted_by INTEGER,
+  reverted_at DATETIME,
+  revert_reason TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (exam_order_id) REFERENCES exam_orders(id),
+  FOREIGN KEY (patient_id) REFERENCES patients(id),
+  FOREIGN KEY (exam_type_id) REFERENCES exam_types(id),
+  FOREIGN KEY (original_slot_id) REFERENCES exam_slots(id),
+  FOREIGN KEY (requested_by) REFERENCES users(id),
+  FOREIGN KEY (reviewed_by) REFERENCES users(id),
+  FOREIGN KEY (new_slot_id) REFERENCES exam_slots(id),
+  FOREIGN KEY (reverted_by) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS exam_waitlist (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  exam_order_id INTEGER NOT NULL,
+  patient_id INTEGER NOT NULL,
+  exam_type_id INTEGER NOT NULL,
+  target_date TEXT NOT NULL,
+  preferred_time TEXT,
+  priority INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN (
+    'waiting', 'promoted', 'cancelled', 'expired'
+  )),
+  added_by INTEGER NOT NULL,
+  promoted_by INTEGER,
+  promoted_at DATETIME,
+  promoted_slot_id INTEGER,
+  cancel_reason TEXT,
+  cancelled_by INTEGER,
+  cancelled_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (exam_order_id) REFERENCES exam_orders(id),
+  FOREIGN KEY (patient_id) REFERENCES patients(id),
+  FOREIGN KEY (exam_type_id) REFERENCES exam_types(id),
+  FOREIGN KEY (added_by) REFERENCES users(id),
+  FOREIGN KEY (promoted_by) REFERENCES users(id),
+  FOREIGN KEY (promoted_slot_id) REFERENCES exam_slots(id),
+  FOREIGN KEY (cancelled_by) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS exam_change_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  exam_order_id INTEGER NOT NULL,
+  change_type TEXT NOT NULL CHECK(change_type IN (
+    'create', 'schedule', 'reschedule_request', 'reschedule_approve',
+    'reschedule_reject', 'reschedule_cancel', 'reschedule_revert',
+    'waitlist_add', 'waitlist_promote', 'waitlist_cancel',
+    'complete', 'cancel', 'status_update'
+  )),
+  from_status TEXT,
+  to_status TEXT,
+  from_slot_id INTEGER,
+  to_slot_id INTEGER,
+  details TEXT,
+  performed_by INTEGER NOT NULL,
+  ip_address TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (exam_order_id) REFERENCES exam_orders(id),
+  FOREIGN KEY (from_slot_id) REFERENCES exam_slots(id),
+  FOREIGN KEY (to_slot_id) REFERENCES exam_slots(id),
+  FOREIGN KEY (performed_by) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS exam_notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  patient_id INTEGER,
+  exam_order_id INTEGER,
+  type TEXT NOT NULL CHECK(type IN (
+    'schedule_confirm', 'reschedule_request', 'reschedule_approved',
+    'reschedule_rejected', 'waitlist_promoted', 'exam_reminder',
+    'exam_cancelled', 'exam_completed'
+  )),
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  is_read INTEGER DEFAULT 0,
+  read_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (patient_id) REFERENCES patients(id),
+  FOREIGN KEY (exam_order_id) REFERENCES exam_orders(id)
+);
+
+CREATE TABLE IF NOT EXISTS exam_configs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  config_key TEXT UNIQUE NOT NULL,
+  config_value TEXT NOT NULL,
+  description TEXT,
+  updated_by INTEGER,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (updated_by) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_exam_order_patient ON exam_orders(patient_id);
+CREATE INDEX IF NOT EXISTS idx_exam_order_type ON exam_orders(exam_type_id);
+CREATE INDEX IF NOT EXISTS idx_exam_order_status ON exam_orders(status);
+CREATE INDEX IF NOT EXISTS idx_exam_order_date ON exam_orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_exam_slot_type_date ON exam_slots(exam_type_id, date);
+CREATE INDEX IF NOT EXISTS idx_exam_slot_status ON exam_slots(status);
+CREATE INDEX IF NOT EXISTS idx_reschedule_order ON exam_reschedule_requests(exam_order_id);
+CREATE INDEX IF NOT EXISTS idx_reschedule_status ON exam_reschedule_requests(status);
+CREATE INDEX IF NOT EXISTS idx_reschedule_date ON exam_reschedule_requests(created_at);
+CREATE INDEX IF NOT EXISTS idx_waitlist_type_date ON exam_waitlist(exam_type_id, target_date);
+CREATE INDEX IF NOT EXISTS idx_waitlist_status ON exam_waitlist(status);
+CREATE INDEX IF NOT EXISTS idx_waitlist_order ON exam_waitlist(exam_order_id);
+CREATE INDEX IF NOT EXISTS idx_changelog_order ON exam_change_logs(exam_order_id);
+CREATE INDEX IF NOT EXISTS idx_changelog_date ON exam_change_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_notification_user ON exam_notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notification_patient ON exam_notifications(patient_id);
+CREATE INDEX IF NOT EXISTS idx_notification_read ON exam_notifications(is_read);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reschedule_active ON exam_reschedule_requests(exam_order_id) 
+  WHERE status IN ('pending', 'approved');
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_active ON exam_waitlist(exam_order_id, exam_type_id, target_date) 
+  WHERE status = 'waiting';
+`;
+
+db.exec(examInitSql);
+
+const examConfigStmt = db.prepare("INSERT OR IGNORE INTO exam_configs (config_key, config_value, description) VALUES (?, ?, ?)");
+examConfigStmt.run('waitlist_auto_promote', 'true', '有空闲时段时自动将候补转正');
+examConfigStmt.run('waitlist_default_limit', '3', '每个时段默认候补人数上限');
+examConfigStmt.run('reminder_hours_before', '24', '检查前多少小时发送提醒');
+examConfigStmt.run('allow_same_day_reschedule', 'true', '是否允许同一天改约');
+examConfigStmt.run('reschedule_revert_window_minutes', '30', '前台审核后可撤回的时间窗口（分钟）');
+
 console.log('数据库初始化完成');

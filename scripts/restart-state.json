@@ -1,0 +1,13 @@
+{
+  "orderA_id": 6,
+  "orderB_id": 7,
+  "orderC_id": 8,
+  "slot1_id": 155,
+  "slot2_id": 156,
+  "slot3_id": 157,
+  "rescheduleReqId": 4,
+  "waitlistId": 3,
+  "targetDate": "2026-06-19",
+  "examTypeId": 2,
+  "examTypeName": "尿常规检查"
+}

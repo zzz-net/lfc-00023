@@ -169,4 +169,122 @@ const api = {
     submitTask: (id) => request(`/sandbox/tasks/${id}/submit`, { method: 'POST' }),
     exportTaskCSV: (id) => `/api/sandbox/tasks/${id}/export`,
   },
+
+  exam: {
+    getTypes: (role) => {
+      const prefix = role === 'admin' ? '/admin' : role === 'nurse' ? '/nurse' : '/doctor';
+      return request(`${prefix}/exam/types`);
+    },
+
+    getOrders: (params = {}, role) => {
+      const prefix = role === 'admin' ? '/admin' : role === 'nurse' ? '/nurse' : '/doctor';
+      const qs = new URLSearchParams(params).toString();
+      return request(`${prefix}/exam/orders${qs ? `?${qs}` : ''}`);
+    },
+
+    getOrderDetail: (id, role) => {
+      const prefix = role === 'admin' ? '/admin' : role === 'nurse' ? '/nurse' : '/doctor';
+      return request(`${prefix}/exam/orders/${id}`);
+    },
+
+    createOrder: (data, role) => {
+      const prefix = role === 'admin' ? '/admin' : '/doctor';
+      return request(`${prefix}/exam/orders`, { method: 'POST', body: JSON.stringify(data) });
+    },
+
+    scheduleOrder: (id, slotId, role) => {
+      const prefix = role === 'admin' ? '/admin' : '/doctor';
+      return request(`${prefix}/exam/orders/${id}/schedule`, { method: 'POST', body: JSON.stringify({ slot_id: slotId }) });
+    },
+
+    completeOrder: (id, result, role) => {
+      const prefix = role === 'admin' ? '/admin' : '/nurse';
+      return request(`${prefix}/exam/orders/${id}/complete`, { method: 'POST', body: JSON.stringify({ result }) });
+    },
+
+    cancelOrder: (id, cancelReason, role) => {
+      const prefix = role === 'admin' ? '/admin' : role === 'nurse' ? '/nurse' : '/doctor';
+      return request(`${prefix}/exam/orders/${id}/cancel`, { method: 'POST', body: JSON.stringify({ cancel_reason: cancelReason }) });
+    },
+
+    getToday: (params = {}, role) => {
+      const prefix = role === 'admin' ? '/admin' : '/nurse';
+      const qs = new URLSearchParams(params).toString();
+      return request(`${prefix}/exam/today${qs ? `?${qs}` : ''}`);
+    },
+
+    getSlots: (params = {}, role) => {
+      const prefix = role === 'admin' ? '/admin' : role === 'nurse' ? '/nurse' : '/doctor';
+      const qs = new URLSearchParams(params).toString();
+      return request(`${prefix}/exam/slots${qs ? `?${qs}` : ''}`);
+    },
+
+    createSlot: (data) => request('/admin/exam/slots', { method: 'POST', body: JSON.stringify(data) }),
+    updateSlot: (id, data) => request(`/admin/exam/slots/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+    getReschedule: (params = {}, role) => {
+      const prefix = role === 'admin' ? '/admin' : role === 'nurse' ? '/nurse' : '/doctor';
+      const qs = new URLSearchParams(params).toString();
+      return request(`${prefix}/exam/reschedule${qs ? `?${qs}` : ''}`);
+    },
+
+    requestReschedule: (data) => request('/doctor/exam/reschedule', { method: 'POST', body: JSON.stringify(data) }),
+
+    cancelReschedule: (id, role) => {
+      const prefix = role === 'doctor' ? '/doctor' : '/nurse';
+      return request(`${prefix}/exam/reschedule/${id}/cancel`, { method: 'POST' });
+    },
+
+    approveReschedule: (id, slotId, reviewNotes, role) => {
+      const prefix = role === 'admin' ? '/admin' : '/nurse';
+      return request(`${prefix}/exam/reschedule/${id}/approve`, { method: 'POST', body: JSON.stringify({ slot_id: slotId, review_notes: reviewNotes }) });
+    },
+
+    rejectReschedule: (id, reviewNotes, role) => {
+      const prefix = role === 'admin' ? '/admin' : '/nurse';
+      return request(`${prefix}/exam/reschedule/${id}/reject`, { method: 'POST', body: JSON.stringify({ review_notes: reviewNotes }) });
+    },
+
+    revertReschedule: (id, revertReason, role) => {
+      const prefix = role === 'admin' ? '/admin' : '/nurse';
+      return request(`${prefix}/exam/reschedule/${id}/revert`, { method: 'POST', body: JSON.stringify({ revert_reason: revertReason }) });
+    },
+
+    getWaitlist: (params = {}, role) => {
+      const prefix = role === 'admin' ? '/admin' : '/nurse';
+      const qs = new URLSearchParams(params).toString();
+      return request(`${prefix}/exam/waitlist${qs ? `?${qs}` : ''}`);
+    },
+
+    addWaitlist: (data) => request('/doctor/exam/waitlist', { method: 'POST', body: JSON.stringify(data) }),
+
+    promoteWaitlist: (id, slotId, role) => {
+      const prefix = role === 'admin' ? '/admin' : '/nurse';
+      return request(`${prefix}/exam/waitlist/${id}/promote`, { method: 'POST', body: JSON.stringify({ slot_id: slotId }) });
+    },
+
+    cancelWaitlist: (id, cancelReason, role) => {
+      const prefix = role === 'admin' ? '/admin' : role === 'nurse' ? '/nurse' : '/doctor';
+      return request(`${prefix}/exam/waitlist/${id}/cancel`, { method: 'POST', body: JSON.stringify({ cancel_reason: cancelReason }) });
+    },
+
+    getConfigs: () => request('/admin/exam/configs'),
+    updateConfig: (key, value, description) => request('/admin/exam/configs', { method: 'POST', body: JSON.stringify({ key, value, description }) }),
+
+    createType: (data) => request('/admin/exam/types', { method: 'POST', body: JSON.stringify(data) }),
+    updateType: (id, data) => request(`/admin/exam/types/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+    exportOrders: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return `/api/admin/exam/orders/export${qs ? `?${qs}` : ''}`;
+    },
+    exportReschedule: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return `/api/admin/exam/reschedule/export${qs ? `?${qs}` : ''}`;
+    },
+    exportWaitlist: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return `/api/admin/exam/waitlist/export${qs ? `?${qs}` : ''}`;
+    },
+  },
 };

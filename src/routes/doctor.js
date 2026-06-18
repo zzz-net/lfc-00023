@@ -7,6 +7,20 @@ const {
   listFollowupPlans,
   updateFollowupStatus
 } = require('../utils/followup');
+const {
+  createExamOrder,
+  scheduleExamOrder,
+  requestReschedule,
+  cancelRescheduleRequest,
+  addToWaitlist,
+  cancelWaitlist,
+  cancelExamOrder,
+  listExamOrders,
+  getExamOrderDetail,
+  listRescheduleRequests,
+  listExamSlots,
+  listExamTypes
+} = require('../utils/exam');
 
 const router = express.Router();
 
@@ -214,6 +228,113 @@ router.post('/followup/:id/cancel', (req, res) => {
     return res.status(400).json({ success: false, error: '取消原因不能为空' });
   }
   const result = updateFollowupStatus(parseInt(req.params.id), 'cancelled', { cancel_reason }, req.user.id, req.user.role, req.ip);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/exam/types', (req, res) => {
+  const result = listExamTypes();
+  res.json(result);
+});
+
+router.get('/exam/orders', (req, res) => {
+  const result = listExamOrders(req.query, req.user.id, req.user.role);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/exam/orders/:id', (req, res) => {
+  const result = getExamOrderDetail(parseInt(req.params.id), req.user.id, req.user.role);
+  if (!result.success) {
+    const statusCode = result.code || 404;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/orders', (req, res) => {
+  const data = { ...req.body, department_id: req.user.department_id };
+  const result = createExamOrder(data, req.user.id, req.ip);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/orders/:id/schedule', (req, res) => {
+  const { slot_id } = req.body;
+  if (!slot_id) {
+    return res.status(400).json({ success: false, error: '时段ID不能为空' });
+  }
+  const result = scheduleExamOrder(parseInt(req.params.id), parseInt(slot_id), req.user.id, req.user.role, req.ip);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/orders/:id/cancel', (req, res) => {
+  const { cancel_reason } = req.body;
+  if (!cancel_reason) {
+    return res.status(400).json({ success: false, error: '取消原因不能为空' });
+  }
+  const result = cancelExamOrder(parseInt(req.params.id), req.user.id, req.user.role, req.ip, cancel_reason);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/exam/slots', (req, res) => {
+  const result = listExamSlots(req.query);
+  res.json(result);
+});
+
+router.get('/exam/reschedule', (req, res) => {
+  const result = listRescheduleRequests(req.query, req.user.id, req.user.role);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/reschedule', (req, res) => {
+  const result = requestReschedule(req.body, req.user.id, req.user.role, req.ip);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/reschedule/:id/cancel', (req, res) => {
+  const result = cancelRescheduleRequest(parseInt(req.params.id), req.user.id, req.user.role, req.ip);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/waitlist', (req, res) => {
+  const result = addToWaitlist(req.body, req.user.id, req.user.role, req.ip);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
+});
+
+router.post('/exam/waitlist/:id/cancel', (req, res) => {
+  const { cancel_reason } = req.body;
+  const result = cancelWaitlist(parseInt(req.params.id), req.user.id, req.user.role, req.ip, cancel_reason);
   if (!result.success) {
     const statusCode = result.code || 400;
     return res.status(statusCode).json(result);

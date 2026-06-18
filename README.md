@@ -1,732 +1,357 @@
-# 门诊分诊排队与叫号系统
+# 门诊分诊排队与叫号系统 —— 检查改约与候补模块
 
-本地门诊分诊排队与叫号系统，支持管理员、护士、医生三类角色，实现从建号、分诊、叫号到接诊完成的完整业务流程。
+基于 Node.js + Express + SQLite (better-sqlite3) + 原生 HTML/CSS/JS 的门诊检查管理系统，支持医生开单、预约时段、改约申请、前台审核、护士执行、候补队列自动转正、全链路审计日志、CSV 导出与系统配置管理。
 
-## 技术栈
+---
 
-- **后端**: Node.js + Express
-- **数据库**: SQLite (better-sqlite3)
-- **认证**: JWT
-- **前端**: 原生 HTML/CSS/JavaScript
-- **密码加密**: bcryptjs
+## 目录
 
-## 快速开始
+- [快速启动](#快速启动)
+- [功能模块](#功能模块)
+- [角色与权限矩阵](#角色与权限矩阵)
+- [核心状态机](#核心状态机)
+- [数据库设计](#数据库设计)
+- [API 接口清单](#api-接口清单)
+- [回归测试](#回归测试)
+- [目录结构](#目录结构)
 
-### 1. 安装依赖
+---
+
+## 快速启动
 
 ```bash
+# 1. 安装依赖
 npm install
+
+# 2. 初始化数据库（仅建表，不删除已有数据）
+node scripts/init-db.js
+
+# 3. 导入样例数据（科室、用户、患者、检查类型、排班槽位、默认配置）
+node scripts/seed-data.js
+
+# 4. 启动服务
+node server.js
+# 访问: http://localhost:3000
 ```
 
-### 2. 初始化数据库（首次运行）
+### 默认账号
+
+| 角色   | 用户名   | 密码       | 说明        |
+| ------ | -------- | ---------- | ----------- |
+| 管理员 | admin    | admin123   | 全权限      |
+| 护士   | nurse1   | nurse123   | 护士台 / 前台审核 |
+| 护士   | nurse2   | nurse123   | 护士台      |
+| 医生   | doctor1  | doctor123  | 内科        |
+| 医生   | doctor2  | doctor123  | 外科        |
+| 医生   | doctor3  | doctor123  | 儿科        |
+| 医生   | doctor4  | doctor123  | 妇科        |
+
+### 前端入口
+
+- 登录页:    http://localhost:3000/login.html
+- 管理员:    http://localhost:3000/admin.html
+- 护士台:    http://localhost:3000/nurse.html
+- 医生站:    http://localhost:3000/doctor.html
+- 叫号屏:    http://localhost:3000/display.html
+
+---
+
+## 功能模块
+
+### 1. 医生站
+- 开检查单：指定患者（自动建档或按身份证复用）、检查类型、优先级、临床诊断、备注
+- 预约时段：查看可用排班、选择时段进行预约
+- 申请改约：指定原时段、期望改约日期范围、时段偏好（morning/afternoon）、原因、备注、可提升优先级
+- 加入候补：检查单未排到时加入候补队列，支持优先级
+- 取消检查单 / 取消改约申请 / 取消候补
+
+### 2. 护士台（前台）
+- 当日待执行清单：按日期查看待执行检查单列表
+- 改约审核：通过（指定新时段）、驳回（附原因）、撤回（30 分钟内可撤回误操作并回滚所有状态）
+- 候补转正：手动将候补患者排到空缺时段，也会在取消/改约成功/撤回时自动触发
+- 完成检查：登记检查结果
+- 取消检查：登记取消原因
+- 候补管理：查看/转正/取消候补记录
+- 变更记录：每张检查单完整的操作历史
+
+### 3. 管理员后台
+- 检查类型管理（新增/修改）
+- 排班时段管理（新增/修改容量）
+- 系统配置（撤回窗口、候补上限、提醒时间等）
+- 全量数据查看（所有检查单、改约申请、候补记录）
+- CSV 批量导出（检查单 / 改约申请 / 候补记录）
+
+### 4. 数据联动与一致性
+- 事务保障：所有多表写入（检查单变更 + 槽位计数 + 审计日志 + 通知消息）均在 SQLite 事务中原子提交
+- 级联转正：检查单取消 / 改约成功 / 撤回时，自动调用 `tryPromoteWaitlistForSlot()` 将最高优先级候补转正（每次仅释放 1 个名额 → 仅转正 1 人）
+- 冲突防重：`idx_reschedule_active` 与 `idx_waitlist_active` 部分唯一索引，防止同一检查单重复待处理改约或同日重复候补
+- 权限隔离：中间件基于 JWT role 拦截；医生仅能操作自己开的检查单（`scheduleExamOrder` / `requestReschedule` / `cancelExamOrder` 均校验 `ordered_by`）
+- 撤回窗口：配置 `reschedule_revert_window_minutes`（默认 30 分钟），SQLite UTC 时间戳正确解析
+
+### 5. 持久化与重启恢复
+- SQLite WAL 模式（`db/index.js` 启动时 `PRAGMA journal_mode=WAL`），事务 ACID 保证
+- 服务重启后：检查单状态、改约申请、候补队列、变更日志、通知消息、槽位计数、管理员配置 —— **全部完整恢复**
+- 重启后可正常读写新数据，无数据损坏
+
+---
+
+## 角色与权限矩阵
+
+| 操作                       | 医生（doctor） | 护士（nurse） | 管理员（admin） | 说明                                     |
+| -------------------------- | :-----------: | :-----------: | :-------------: | ---------------------------------------- |
+| 开检查单                   |       ✅       |       ❌       |        ❌        | 仅本人所属科室                           |
+| 预约时段                   |       ✅       |       ✅       |        ✅        | 医生仅本人开单                            |
+| 申请改约                   |       ✅       |       ❌       |        ❌        | 仅本人开单                                |
+| 改约审核（通过/驳回）      |       ❌       |       ✅       |        ✅        |                                          |
+| 撤回改约（时间窗口内）     |       ❌       |       ✅       |        ✅        | 自动回滚时段、优先级、名额                |
+| 取消检查单                 |       ✅       |       ✅       |        ✅        | 医生仅本人开单                            |
+| 完成检查（登记结果）       |       ❌       |       ✅       |        ✅        |                                          |
+| 加入候补                   |       ✅       |       ❌       |        ❌        |                                          |
+| 候补转正                   |       ❌       |       ✅       |        ✅        |                                          |
+| 查看当日待执行             |       ❌       |       ✅       |        ✅        |                                          |
+| 查看全量数据               |       仅本人   |       ✅       |        ✅        |                                          |
+| 配置管理                   |       ❌       |       ❌       |        ✅        |                                          |
+| CSV 导出                   |       ❌       |       ❌       |        ✅        |                                          |
+| 检查类型 / 排班时段管理    |       ❌       |       ❌       |        ✅        |                                          |
+
+---
+
+## 核心状态机
+
+### 检查单（exam_orders.status）
+
+```
+pending ──schedule──▶ scheduled ──request_reschedule──▶ rescheduling ──approve──▶ scheduled (新时段)
+                                                │                        │
+                                                │                        └──reject──▶ scheduled (原时段)
+                                                └──cancel_request──▶ scheduled
+scheduled ──cancel──▶ cancelled
+scheduled ──complete──▶ completed
+rescheduling ──approve──revert_within_window──▶ scheduled (回滚至原时段 + 原优先级 + 名额)
+```
+
+### 改约申请（exam_reschedule_requests.status）
+
+```
+pending ──approve──▶ approved ──revert(within window)──▶ reverted
+pending ──reject──▶ rejected
+pending ──cancel──▶ cancelled
+```
+
+### 候补（exam_waitlist.status）
+
+```
+waiting ──promote──▶ promoted
+waiting ──cancel──▶ cancelled
+waiting ──expire──▶ expired
+```
+
+---
+
+## 数据库设计
+
+共 **8 张表 + 索引 + 部分唯一索引**，位于 `data/clinic.db`（WAL 模式）：
+
+| 表名                       | 说明                            | 关键字段                                                  |
+| -------------------------- | ------------------------------- | --------------------------------------------------------- |
+| `exam_types`               | 检查类型                        | id, name, code, description                               |
+| `exam_slots`               | 排班时段                        | id, exam_type_id, date, start_time, end_time, capacity, booked_count |
+| `exam_orders`              | 检查单                          | id, order_no, patient_id, exam_type_id, ordered_by, urgency, status, scheduled_slot_id, result, cancel_reason |
+| `exam_reschedule_requests` | 改约申请                        | id, request_no, exam_order_id, original_slot_id, requested_start/end_date, preferred_time, reason, status, requested_by, reviewed_by, reviewed_at, new_slot_id, reverted_by, reverted_at, revert_reason |
+| `exam_waitlist`            | 候补队列                        | id, exam_order_id, target_date, priority, status, added_by, promoted_by, promoted_at, promoted_slot_id |
+| `exam_change_logs`         | 变更日志（审计）                | id, exam_order_id, change_type, from_status, to_status, from_slot_id, to_slot_id, details(JSON), performed_by, ip_address |
+| `exam_notifications`       | 通知消息                        | id, user_id, patient_id, exam_order_id, type, title, content, is_read |
+| `exam_configs`             | 系统配置                        | id, config_key, config_value, description, updated_by, updated_at |
+
+### 关键索引
+
+```sql
+-- 防止同一检查单同时存在多条待处理改约
+CREATE UNIQUE INDEX idx_reschedule_active
+ON exam_reschedule_requests(exam_order_id)
+WHERE status IN ('pending');
+
+-- 防止同一检查单同日重复候补
+CREATE UNIQUE INDEX idx_waitlist_active
+ON exam_waitlist(exam_order_id, target_date)
+WHERE status = 'waiting';
+```
+
+### 默认配置（`exam_configs`）
+
+| config_key                        | 默认值 | 说明                                       |
+| --------------------------------- | ------ | ------------------------------------------ |
+| `reschedule_revert_window_minutes`| 30     | 前台审核后可撤回的时间窗口（分钟）          |
+| `waitlist_auto_promote`           | true   | 释放名额时是否自动转正候补                  |
+| `waitlist_default_limit`          | 3      | 每时段默认候补上限                          |
+| `waitlist_max_per_slot`           | 5      | 每时段候补人数上限                          |
+| `allow_same_day_reschedule`       | true   | 是否允许改约到同一天                        |
+| `reminder_hours_before`           | 24     | 检查前多少小时发送提醒                      |
+
+---
+
+## API 接口清单
+
+### 医生端 `/api/doctor/*`
+
+| 方法   | 路径                                         | 说明                     |
+| ------ | -------------------------------------------- | ------------------------ |
+| GET    | `/exam/types`                                | 获取检查类型列表         |
+| GET    | `/exam/slots?exam_type_id=&date=`            | 查询可用排班时段         |
+| GET    | `/exam/orders`                               | 我开的检查单列表         |
+| GET    | `/exam/orders/:id`                           | 检查单详情（含日志/通知）|
+| POST   | `/exam/orders`                               | 开检查单                 |
+| POST   | `/exam/orders/:id/schedule`                  | 预约时段                 |
+| POST   | `/exam/orders/:id/cancel`                    | 取消检查单               |
+| POST   | `/exam/reschedule`                           | 提交改约申请             |
+| GET    | `/exam/reschedule`                           | 我的改约申请列表         |
+| POST   | `/exam/reschedule/:id/cancel`                | 取消改约申请             |
+| POST   | `/exam/waitlist`                             | 加入候补                 |
+| POST   | `/exam/waitlist/:id/cancel`                  | 取消候补                 |
+
+### 护士端 `/api/nurse/*`
+
+| 方法   | 路径                                         | 说明                     |
+| ------ | -------------------------------------------- | ------------------------ |
+| GET    | `/exam/types`                                | 检查类型                 |
+| GET    | `/exam/today?date=`                          | 当日待执行清单           |
+| GET    | `/exam/orders`                               | 检查单列表               |
+| GET    | `/exam/orders/:id`                           | 检查单详情               |
+| POST   | `/exam/orders/:id/complete`                  | 完成检查（登记结果）     |
+| POST   | `/exam/orders/:id/cancel`                    | 取消检查                 |
+| GET    | `/exam/slots`                                | 排班时段                 |
+| GET    | `/exam/reschedule`                           | 改约申请列表             |
+| POST   | `/exam/reschedule/:id/approve`               | 审核通过（slot_id=新时段）|
+| POST   | `/exam/reschedule/:id/reject`                | 驳回                     |
+| POST   | `/exam/reschedule/:id/revert`                | 撤回（含状态回滚）       |
+| GET    | `/exam/waitlist`                             | 候补列表                 |
+| POST   | `/exam/waitlist/:id/promote`                 | 候补手动转正             |
+| POST   | `/exam/waitlist/:id/cancel`                  | 取消候补                 |
+
+### 管理员 `/api/admin/*`
+
+| 方法   | 路径                                         | 说明                     |
+| ------ | -------------------------------------------- | ------------------------ |
+| GET    | `/exam/types`                                | 检查类型列表             |
+| POST   | `/exam/types`                                | 新增检查类型             |
+| POST   | `/exam/types/:id`                            | 修改检查类型             |
+| GET    | `/exam/slots`                                | 排班时段列表             |
+| POST   | `/exam/slots`                                | 新增时段                 |
+| POST   | `/exam/slots/:id`                            | 修改时段容量             |
+| GET    | `/exam/today`                                | 当日清单                 |
+| GET    | `/exam/orders`                               | 全量检查单               |
+| GET    | `/exam/orders/:id`                           | 检查单详情               |
+| POST   | `/exam/orders/:id/schedule`                  | 管理员预约               |
+| POST   | `/exam/orders/:id/cancel`                    | 取消                     |
+| GET    | `/exam/orders/export`                        | CSV 导出检查单           |
+| GET    | `/exam/reschedule/export`                    | CSV 导出改约申请         |
+| GET    | `/exam/waitlist/export`                      | CSV 导出候补记录         |
+| GET    | `/exam/configs`                              | 获取配置列表             |
+| POST   | `/exam/configs`                              | 更新配置                 |
+
+---
+
+## 回归测试
+
+### 主测试（77 项断言，覆盖全部核心场景）
 
 ```bash
-npm run reset
+node scripts/test-exam.js
 ```
 
-> 这会创建数据库表结构，并插入样例数据（科室、账号、患者、号源配置）。
+覆盖场景：
+1. ✅ **登录与基础数据** — 各角色登录、检查类型、排班时段加载
+2. ✅ **医生开单** — 3 张不同优先级检查单创建成功
+3. ✅ **预约时段** — 槽位 booked_count 正确 +1
+4. ✅ **发起改约申请** — 状态变为 rescheduling，优先级可提升
+5. ✅ **重复申请冲突** — 同一检查单重复改约被拒绝
+6. ✅ **权限拦截** — 医生 2 无法操作医生 1 的单（均返回 403）
+7. ✅ **改约审核驳回** — 状态回退为 scheduled，可重新申请
+8. ✅ **改约审核通过** — 新时段正确、原时段释放、优先级提升
+9. ✅ **候补加入与去重** — 按优先级排序，同日重复候补被拒绝
+10. ✅ **取消触发候补自动转正** — 释放名额 → 高优先级候补 C 转正到 slot2，D 仍排队
+11. ✅ **前台误操作撤回（核心）** — 30 分钟内撤回 → 时段回原、优先级回滚、名额恢复（兼容自动候补）
+12. ✅ **完成检查** — 结果登记，状态 completed
+13. ✅ **护士视图** — 当日待执行、变更日志链路（create/schedule/reschedule/approve/revert/complete）
+14. ✅ **CSV 导出** — 检查单 / 改约申请 / 候补记录三类均成功
+15. ✅ **管理员配置** — 读写配置正常，含撤回窗口等
+16. ✅ **通知消息** — 预约确认、改约申请等均写入消息表
 
-### 3. 启动服务
+### 重启恢复测试（28 项断言，验证持久化）
 
 ```bash
-npm start
+# Phase 1：写入测试数据并保存快照
+node scripts/test-exam-restart.js phase1
+
+# 重启服务器后，Phase 2：验证数据完整恢复
+node scripts/test-exam-restart.js phase2
 ```
 
-服务启动后访问: http://localhost:3000
+验证项目：
+- ✅ 检查单状态（scheduled / completed）持久化
+- ✅ 改约申请状态（approved）持久化
+- ✅ 候补队列记录持久化
+- ✅ 变更日志链路持久化（create/schedule/reschedule_request/reschedule_approve）
+- ✅ 通知消息持久化（schedule_confirm/reschedule_request/reschedule_approved）
+- ✅ 槽位名额计数持久化
+- ✅ 管理员配置持久化（restart_test_key = restart_ok_123）
+- ✅ 重启后 DB 可继续读写（新开检查单成功）
 
-## 测试账号
+---
 
-| 角色 | 用户名 | 密码 | 所属科室 |
-|------|--------|------|----------|
-| 管理员 | admin | admin123 | - |
-| 护士 | nurse1 | nurse123 | - |
-| 护士 | nurse2 | nurse123 | - |
-| 内科医生 | doctor1 | doctor123 | 内科 |
-| 外科医生 | doctor2 | doctor123 | 外科 |
-| 儿科医生 | doctor3 | doctor123 | 儿科 |
-| 妇科医生 | doctor4 | doctor123 | 妇科 |
-
-## 页面入口
-
-- 首页: http://localhost:3000/
-- 登录页: http://localhost:3000/login.html
-- 管理员后台: http://localhost:3000/admin.html
-- 护士台: http://localhost:3000/nurse.html
-- 医生站: http://localhost:3000/doctor.html
-- 叫号屏: http://localhost:3000/display.html
-
-## 完整业务流程测试
-
-### 场景一：完整接诊流程（建号 → 分诊 → 叫号 → 接诊完成）
-
-1. **管理员配置号源**
-   - 登录 admin/admin123
-   - 进入「号源配置」标签页
-   - 选择内科，配置今日号源：总号源20，现场加号上限5
-   - 确认配置成功
-
-2. **护士登记患者并挂号**
-   - 登录 nurse1/nurse123
-   - 选择科室：内科
-   - 在「患者登记」标签页输入身份证号：`110101199001011234`（张三，已有样例数据）
-   - 点击「查询患者」，确认患者信息
-   - 选择挂号类型：预约
-   - 点击「确认挂号」，记录返回的排队号码（应为1号）
-
-3. **护士叫号**
-   - 切换到「排队管理」标签页
-   - 看到张三（1号）状态为「等待中」
-   - 点击「叫号」按钮，状态变为「已叫号」
-   - 可打开叫号屏 http://localhost:3000/display.html 选择内科查看叫号显示
-
-4. **医生接诊**
-   - 登录 doctor1/doctor123（内科医生）
-   - 在「已叫号待接诊」区域看到张三（1号）
-   - 点击「开始接诊」，状态变为「就诊中」
-   - 在「当前接诊」区域点击「填写记录并完成接诊」
-   - 填写：
-     - 主诉：发热、咳嗽3天
-     - 诊断：上呼吸道感染
-     - 处方：布洛芬缓释胶囊 0.3g bid * 3天
-   - 点击「完成接诊」
-
-5. **查看结果**
-   - 护士台刷新后看到张三状态变为「已完成」
-   - 叫号屏不再显示该患者
-   - 管理员可在「审计日志」查看完整操作记录
-   - 管理员可在「日报导出」导出今日数据
-
-### 场景二：测试满号限制
-
-1. 管理员将内科今日号源总号源改为2
-2. 护士用2个不同身份证号挂号（如李四、王五）
-3. 尝试挂第3个号，系统提示「今日号源已满」
-
-### 场景三：测试现场加号上限
-
-1. 管理员将内科今日现场加号上限改为1
-2. 护士选择「现场加号」类型挂1个号成功
-3. 尝试挂第2个现场加号，系统提示「今日现场加号已满」
-
-### 场景四：测试停诊时段建号
-
-1. 管理员进入「停诊时段」
-2. 为内科添加一个停诊时段（包含今日）
-3. 护士尝试为内科挂号，系统提示「该科室今日停诊」
-
-### 场景五：测试越权接诊
-
-1. 护士为外科挂号一位患者并叫号
-2. 用内科医生 doctor1 登录
-3. 尝试通过接口调用接诊外科患者，系统返回「越权操作：该患者不属于您的科室」
-
-### 场景六：测试重复过号（幂等）
-
-1. 护士叫号一位患者
-2. 第一次「过号」，状态变为「过号」(missed)，写入一条过号审计事件
-3. 再次「过号」，接口返回成功（200），状态仍为「过号」，**不产生新的审计事件**
-4. 连续多次过号，审计中该记录的 `miss_patient` 事件始终只有一条
-
-> 说明：过号接口对 `missed` 状态做幂等处理。重复过号视为成功，队列状态不被改坏，审计只保留首次过号事件。
-> 仍会报错的情况：对 `waiting`/`completed`/`consulting`/`returned` 状态调用过号，返回 400「只有已叫号的患者才能过号」。
-
-### 场景七：测试退回功能
-
-1. 护士叫号一位患者
-2. 点击「退回」，输入原因：患者要求退号
-3. 状态变为「退回」，显示退回原因
-4. 在统计卡片中「退回」计数+1
-5. 该号源可被重新使用（退回数量不计入已用号源）
-
-### 场景八：测试系统重启数据一致性
-
-1. 完成上述部分操作后，记录当前队列状态与审计事件
-2. 停止服务（仅停止本进程，例如记下监听 3000 端口的 `node server.js` PID 后 `Stop-Process -Id <PID>`；切勿按进程名批量结束）
-3. 重新启动 `npm start`
-4. 登录查看：
-   - 排队顺序保持不变
-   - 已完成、过号、退回状态正确
-   - 退回原因、操作者信息完整
-   - 审计历史记录完整
-   - 日报导出数据一致
-
-> 说明：队列与审计数据持久化在 `data/clinic.db`（SQLite + WAL 模式）。重启后会自动回放 WAL，已提交事务不会丢失。注意：重启时请确保只有一个 `node server.js` 进程在操作该数据库文件，多个进程同时硬终止可能导致 WAL 竞争而丢失未落盘数据。
-
-### 场景九：审计日志筛选查询
-
-`GET /api/public/audit-logs` 支持 `action`、`user_id`、`start_date`、`end_date`、`page`、`pageSize` 任意组合：
+## 目录结构
 
 ```
-GET /api/public/audit-logs?action=miss_patient
-GET /api/public/audit-logs?user_id=2
-GET /api/public/audit-logs?start_date=2026-06-01&end_date=2026-06-30
-GET /api/public/audit-logs?action=miss_patient&user_id=2&page=1&pageSize=5
-GET /api/public/audit-logs?page=2&pageSize=10
-```
-
-预期：以上任一组合均返回 200，并包含 `pagination.total` 与 `logs` 数组；`action` 筛选结果中所有记录的 `action` 字段都与入参一致。
-
-### 场景十：回归测试（一键复现上述两个修复）
-
-```
-npm start                          # 1. 启动服务
-node scripts/test-regression.js    # 2. 覆盖：叫号→过号→重复过号幂等→审计筛选组合→过号审计唯一性
-# 3. 重启服务（记下 3000 端口的 node PID，Stop-Process -Id <PID>，再 npm start）
-node scripts/test-after-restart.js # 4. 重启后复测：队列/过号/日志筛选一致性
-```
-
-`scripts/test-regression.js` 共 26 项断言，包含：
-- 重复过号第二次/第三次返回 200 且状态仍为 `missed`，不写入 `return_reason`
-- `action` / `user_id` / `date` / 全组合 / 分页 筛选均返回 200
-- 同一排队记录的 `miss_patient` 审计事件仅 1 条
-
-`scripts/test-after-restart.js` 在重启后运行，复测：队列状态、过号幂等、审计筛选均与重启前一致。
-
-### 场景十一：CSV批量导入预约/登记
-
-#### 准备工作
-1. 重置数据库：`npm run reset`
-2. 启动服务：`npm start`
-3. 登录 admin/admin123，为内科配置今日号源（总号源20，现场加号上限5）
-
-#### 11.1 成功导入
-1. 登录 nurse1/nurse123（护士台）
-2. 进入「批量导入」标签页
-3. 点击「下载模板」获取CSV模板
-4. 准备CSV内容（保存为 import.csv）：
-```csv
-id_card,name,department,queue_date,type,phone,gender,age
-110101199001013001,批量患者1,内科,2026-06-18,预约,13800003001,男,30
-110101199001013002,批量患者2,1,2026-06-18,现场,13800003002,女,25
-110101199001013003,批量患者3,内科,2026-06-18,appointment,13800003003,男,35
-```
-5. 点击「上传CSV文件」选择 import.csv，或直接粘贴CSV内容到文本框
-6. 点击「开始导入」
-7. 预期结果：
-   - 显示导入结果：成功3条，失败0条
-   - 进入「排队管理」标签页，看到3位患者状态为「等待中」
-   - 排队号码连续（1、2、3号）
-
-#### 11.2 冲突检测 - 导入包含错误的CSV
-1. 准备包含错误的CSV：
-```csv
-id_card,name,department,queue_date,type,phone,gender,age
-110101199001013001,批量患者1,内科,2026-06-18,预约,13800003001,男,30
-110101199001013004,批量患者4,不存在的科室,2026-06-18,预约,13800003004,男,40
-110101199001013005,批量患者5,内科,2026/06/18,预约,13800003005,男,50
-110101199001013006,批量患者6,内科,2026-06-18,错误类型,13800003006,男,60
-```
-2. 导入后预期结果：
-   - 成功1条（第1条新患者）
-   - 失败3条：
-     - 第2条：科室不存在
-     - 第3条：日期格式错误
-     - 第4条：挂号类型错误
-   - 失败明细显示具体错误代码和信息
-
-#### 11.3 冲突检测 - 号源已满
-1. 将内科今日总号源改为2
-2. 准备3条患者的CSV导入
-3. 预期结果：成功2条，失败1条（号源已满）
-
-#### 11.4 冲突检测 - 停诊时段
-1. 管理员为外科添加今日停诊时段
-2. 准备外科患者的CSV导入
-3. 预期结果：导入失败，提示「该科室今日停诊」
-
-### 场景十二：批次查询、导出与撤销
-
-#### 12.1 批次查询
-1. 登录护士/管理员账号
-2. 进入「导入批次」标签页
-3. 可按日期和科室筛选批次
-4. 点击批次号查看详情，显示每条记录的状态、错误信息
-5. 预期：所有导入过的批次都能查询到，状态正确
-
-#### 12.2 批次导出CSV
-1. 在批次详情页点击「导出CSV」
-2. 下载的CSV包含：行号、身份证号、姓名、科室、日期、类型、状态、错误信息
-3. 预期：导出内容与页面显示一致
-
-#### 12.3 撤销整批尚未叫号的记录
-1. 导入一批新患者（确保都未叫号）
-2. 在批次详情页点击「撤销批次」
-3. 输入撤销原因，确认撤销
-4. 预期结果：
-   - 批次状态变为「已撤销」
-   - 所有关联记录状态变为「退回」
-   - 退回原因为输入的撤销原因
-   - 退回人为当前登录用户
-   - 审计日志记录 `revoke_batch` 事件和每条记录的 `return_queue` 事件
-
-#### 12.4 撤销限制 - 已叫号的批次无法撤销
-1. 导入一批患者
-2. 叫号其中一位患者
-3. 尝试撤销该批次
-4. 预期结果：撤销失败，提示「该批次中存在已叫号或已就诊的记录，无法撤销」
-
-### 场景十三：权限控制 - 医生无法操作批量导入
-
-1. 登录 doctor1/doctor123（内科医生）
-2. 尝试直接调用批量导入接口（或在URL中访问护士/管理员批量导入页面）
-3. 预期结果：返回403无权限
-
-### 场景十四：服务重启后数据一致性
-
-1. 完成上述批量导入和撤销操作后，记录以下状态：
-   - 各批次状态（completed/revoked）
-   - 队列中各记录状态（waiting/returned）
-   - 审计日志中的导入和撤销事件
-2. 停止服务（记下 3000 端口的 node PID，`Stop-Process -Id <PID>`）
-3. 重新启动 `npm start`
-4. 登录查看：
-   - 导入批次列表完整，状态正确
-   - 批次详情完整，成功/失败记录清晰
-   - 队列顺序保持不变
-   - 已撤销批次的记录仍为「退回」状态，退回原因和操作人完整
-   - 审计日志中的 `import_batch` 和 `revoke_batch` 事件完整
-   - 日报导出数据一致
-
-### 场景十五：一键完整测试（自动化）
-
-```bash
-npm run reset                    # 1. 重置数据库
-npm start                        # 2. 启动服务
-node scripts/test-batch-import.js # 3. 批量导入功能完整测试（25项断言）
-# 4. 停止服务（记下 3000 端口的 node PID，Stop-Process -Id <PID>）
-npm start                        # 5. 重新启动
-node scripts/test-batch-after-restart.js # 6. 重启后一致性测试（14项断言）
-```
-
-`scripts/test-batch-import.js` 覆盖25项断言，包含：
-- CSV解析与基本导入功能
-- 数据一致性验证（批次↔队列）
-- 各类冲突检测（身份证重复、科室不存在、停诊、号满等）
-- 事务性验证（无半写入）
-- 批次查询（日期/科室/分页筛选）
-- 批次撤销（成功/失败场景）
-- 权限控制（医生403）
-- 审计日志完整性
-- CSV格式验证（缺少列、日期/类型错误）
-
-`scripts/test-batch-after-restart.js` 在重启后运行，覆盖32项断言，包含：
-- 批次状态持久化
-- 撤销状态和原因持久化
-- 队列状态与撤销记录一致
-- 审计日志持久化
-- 排队号码连续性
-- 批次记录完整性
-- 日报和统计数据一致性
-
-### 场景十六：护士随访登记模块（核心功能）
-
-#### 16.1 功能概述
-
-随访模块支持医生在接诊结束后为患者创建复诊随访计划，护士查看并执行提醒，管理员配置参数和导出数据。
-
-**核心特性：**
-- **医生端**：接诊完成时快速创建随访计划，填写随访日期、提醒方式（电话/短信/微信/无）、注意事项、关联诊断；独立的随访计划管理页面，支持查看、筛选、取消
-- **护士端**：今日待提醒列表（根据配置的提前天数自动计算），支持按科室筛选；登记联系结果（已联系/未接通/已完成复诊）并补充备注
-- **管理员端**：配置提醒提前天数（0-30天）；随访计划全量查询、多条件筛选；CSV导出；取消异常随访
-- **防冲突机制**：同一患者同科室同日只能有一个未取消的随访计划（部分唯一索引实现）
-- **取消后重建**：取消后的随访计划不占用唯一索引，可同日同科室重新创建
-- **权限隔离**：医生只能查看/操作自己创建的随访，护士不可配置系统参数，非管理员无法修改配置
-- **不回写历史**：随访仅通过外键关联诊疗记录，绝不修改 `consultation_records` 表
-- **重启恢复**：SQLite WAL模式持久化，所有状态、配置、审计日志重启后完整保留
-- **审计追踪**：创建、取消、登记联系、修改配置、完成随访等关键操作全部记录审计日志
-
-#### 16.2 完整随访业务流程
-
-**步骤1：医生接诊完成后创建随访**
-1. 完成「场景一」的完整接诊流程（患者张三，内科）
-2. 在医生站「当前接诊」区域点击「完成接诊」后，弹出「创建随访计划」对话框（或在「随访计划管理」标签页手动创建）
-3. 填写：
-   - 随访日期：选择今日或未来某一天
-   - 提醒方式：电话
-   - 注意事项：按时服药，避免辛辣食物，3天后复查血常规
-   - 关联诊断：上呼吸道感染（自动从接诊记录带入，可修改）
-4. 点击「确认创建」
-5. 预期：创建成功，状态为「待提醒」
-
-**步骤2：重复计划冲突检测**
-1. 尝试为同一位患者、同一科室、同一天再次创建随访计划
-2. 预期：返回 400 错误，提示「该患者今日在本科室已有未完成的随访计划」
-
-**步骤3：护士查看今日待提醒并登记联系结果**
-1. 登录 nurse1/nurse123（护士台）
-2. 进入「随访提醒」标签页
-3. 看到今日待提醒列表（默认提醒提前天数=1天，所以随访日期为今天和明天的都会显示）
-4. 点击「登记联系结果」，选择：
-   - 联系结果：已联系
-   - 联系备注：患者已确认明天按时复诊
-5. 点击「确认登记」
-6. 预期：随访状态更新为「已联系」，审计日志记录 `record_followup_contact` 事件
-
-**步骤4：管理员配置提醒提前天数**
-1. 登录 admin/admin123（管理员后台）
-2. 进入「随访管理」标签页
-3. 在「提醒配置」区域，将提前提醒天数改为 3 天，点击「保存配置」
-4. 预期：配置保存成功，审计日志记录 `update_followup_config` 事件
-5. 刷新护士台「今日待提醒」列表，现在可以看到未来3天内的随访计划
-
-**步骤5：医生取消随访 + 取消后重新创建（关键流程）**
-1. 回到医生站，在「随访计划管理」标签页找到刚才的随访
-2. 点击「取消」，输入取消原因：患者临时有事，改期
-3. 预期：状态变为「已取消」，审计日志记录 `cancel_followup_plan` 事件
-4. 现在尝试为该患者、同一科室、同一天重新创建随访计划
-5. 预期：创建成功！（因为取消后的记录不再占用唯一索引约束）
-6. 这是关键设计：使用部分唯一索引 `WHERE status != 'cancelled'` 实现取消后可重建
-
-**步骤6：管理员导出随访CSV**
-1. 登录管理员后台，进入「随访管理」
-2. 使用筛选条件（如状态=已取消，日期范围）筛选数据
-3. 点击「导出CSV」
-4. 下载的CSV包含21列：随访ID、患者ID、患者姓名、身份证号、性别、年龄、手机号、科室、医生姓名、排队记录ID、接诊记录ID、随访日期、提醒方式、注意事项、关联诊断、状态、联系结果、联系备注、联系人、联系时间、创建时间、取消原因、取消人、取消时间
-5. 预期：CSV内容完整，支持Excel直接打开
-
-#### 16.3 状态流转图
-
-```
-pending(待提醒)
-    ├─→ contacted(已联系) ──→ completed(已完成复诊)
-    ├─→ no_answer(未接通)  ──→ (可继续联系直到已联系/完成)
-    └─→ cancelled(已取消)  [终态，可同日同科室重新创建]
-```
-
-状态流转校验规则：
-- 只能对 `pending` 状态执行「取消」操作
-- 只能对 `pending`/`contacted`/`no_answer` 状态登记联系结果
-- `cancelled` 和 `completed` 为终态，不可再修改
-- 同一状态重复登记视为幂等（不重复写审计日志）
-
-#### 16.4 权限隔离矩阵
-
-| 操作 | 管理员 | 护士 | 医生（自己创建的）| 医生（他人创建的）|
-|------|--------|------|------------------|------------------|
-| 创建随访 | ✅ | ✅ | ✅ | ❌ |
-| 查看全部随访列表 | ✅ | ✅ | ❌（只能看自己的）| ❌ |
-| 查看详情 | ✅ | ✅ | ✅ | ❌（403）|
-| 登记联系结果 | ✅ | ✅ | ❌ | ❌ |
-| 取消随访 | ✅ | ❌ | ✅ | ❌（403）|
-| 修改提醒提前天数配置 | ✅ | ❌（403）| ❌（403）| ❌ |
-| 导出CSV | ✅ | ❌ | ❌ | ❌ |
-
-#### 16.5 服务重启后数据一致性验证
-
-随访模块专门设计了重启后一致性验证，确保以下数据在服务重启后完整保留：
-1. 提醒提前天数配置（`followup_configs` 表持久化）
-2. 所有随访计划状态（pending/contacted/no_answer/cancelled/completed）
-3. 取消原因、取消人、取消时间
-4. 联系结果、联系备注、联系人、联系时间
-5. 注意事项、关联诊断、提醒方式
-6. 审计日志的5类操作事件（create/cancel/record/complete/update_config）
-7. 关联的患者、科室、排队记录、接诊记录外键
-8. 历史诊疗数据（`consultation_records` 表）绝不被修改
-
-#### 16.6 一键自动化完整测试
-
-```bash
-npm run reset                          # 1. 重置数据库
-npm start                              # 2. 启动服务
-node scripts/test-followup.js          # 3. 随访模块完整回归测试（54项断言）
-# 4. 停止服务（仅停止本进程：先查3000端口PID，Stop-Process -Id <PID>）
-npm start                              # 5. 重新启动
-node scripts/test-followup-restart.js  # 6. 重启后一致性测试（67项断言）
-```
-
-**`scripts/test-followup.js` 覆盖场景（54项断言）：**
-- 登录 → 配置号源 → 登记患者 → 挂号 → 叫号 → 接诊完成（前置条件）
-- 医生创建随访计划 + 验证历史诊疗数据未被修改
-- 重复计划冲突检测（400错误）
-- 权限隔离（医生2不能查看/操作医生1的随访）
-- 护士查看今日待提醒列表
-- 管理员修改提醒提前天数配置
-- 护士登记联系结果（已联系 + 备注）
-- 医生取消随访计划
-- **取消后重新创建同日同科室随访（关键功能验证）**
-- 权限控制（护士/医生不能修改配置，返回403）
-- CSV导出验证（包含患者/诊断/状态/备注/提醒方式等）
-- 审计日志完整性（5种操作类型）
-- 接口参数校验（无效日期/无效方式/缺少字段）
-- 管理员取消随访
-- CSV筛选导出
-- 未登录访问（401）
-- 分页查询
-- 历史诊疗数据不被修改验证（二次验证）
-- 护士登记已完成复诊
-- 多条件筛选查询
-- 保存测试状态供重启后验证
-
-**`scripts/test-followup-restart.js` 覆盖场景（67项断言）：**
-- 配置持久化验证（提前提醒天数保持不变）
-- 随访计划总数一致（4条）
-- 第一条随访（已取消）完整信息持久化（10+项属性检查）
-- 第二条随访（管理员取消）状态持久化
-- **取消后重新创建的计划持久化验证**
-- 护士登记的联系结果持久化（含联系人、联系时间、备注）
-- 已完成随访状态持久化（含完成备注）
-- 审计日志持久化（5类操作事件全部存在）
-- **历史诊疗数据未被修改（诊断/处方/主诉完整）**
-- CSV导出内容与重启前一致（含患者姓名、关联诊断、状态、备注、提醒方式）
-- 权限隔离重启后依然生效（医生2仍403）
-- 今日待提醒功能正常工作
-- 重启后可继续创建新随访（数据库可写）
-- 重启后可继续修改配置（配置表可写）
-- 重启后取消可正常重新创建同日随访（唯一索引正常）
-- CSV筛选导出功能正常
-
-### 场景十七：导入沙箱模块 - 反复演练不碰正式数据
-
-### 认证接口
-
-```
-POST /api/auth/login
-Body: { username, password }
-Return: { token, user }
-```
-
-### 管理员接口
-
-```
-GET    /api/admin/departments          # 获取科室列表
-POST   /api/admin/departments          # 创建科室
-PUT    /api/admin/departments/:id      # 更新科室
-DELETE /api/admin/departments/:id      # 删除科室
-
-GET    /api/admin/daily-slots          # 获取号源配置
-POST   /api/admin/daily-slots          # 创建号源配置
-PUT    /api/admin/daily-slots/:id      # 更新号源配置
-
-GET    /api/admin/closed-periods       # 获取停诊时段
-POST   /api/admin/closed-periods       # 创建停诊时段
-DELETE /api/admin/closed-periods/:id   # 删除停诊时段
-
-GET    /api/admin/users                # 获取用户列表
-POST   /api/admin/users                # 创建用户
-```
-
-### 护士接口
-
-```
-POST   /api/nurse/patients             # 创建/查询患者
-GET    /api/nurse/patients/:id_card    # 查询患者
-
-POST   /api/nurse/queue/register       # 挂号
-GET    /api/nurse/queue/:dept_id       # 获取排队列表
-POST   /api/nurse/queue/call/:id       # 叫号
-POST   /api/nurse/queue/miss/:id       # 过号
-POST   /api/nurse/queue/return/:id     # 退回
-GET    /api/nurse/queue/stats/:dept_id # 获取排队统计
-
-# 批量导入
-POST   /api/nurse/batch/import         # CSV批量导入（预约/现场登记）
-GET    /api/nurse/batches              # 批次列表（支持 date/department_id/page/pageSize 筛选）
-GET    /api/nurse/batches/:id          # 批次详情（含每条记录状态与错误信息）
-GET    /api/nurse/batches/:id/csv      # 导出批次结果 CSV
-POST   /api/nurse/batches/:id/revoke   # 撤销整批尚未叫号的记录
-```
-
-> 管理员接口 `/api/admin/batch/import`、`/api/admin/batches` 等与护士完全一致。医生接口不含任何批量导入能力。
-
-**批量导入请求体（POST /api/nurse/batch/import）**：
-```json
-{ "csv_text": "id_card,name,department,queue_date,type\n110101199001013001,张三,内科,2026-06-18,预约" }
-```
-
-**批量导入返回示例**：
-```json
-{
-  "success": true,
-  "batch_id": 1,
-  "batch_no": "BATCH1781723483898681",
-  "total_count": 3,
-  "success_count": 2,
-  "fail_count": 1,
-  "details": {
-    "success": [{ "row": 1, "id_card": "110101199001013001", "name": "张三", "department": "内科", "queue_date": "2026-06-18", "type": "appointment" }],
-    "failed":  [{ "row": 3, "id_card": "...", "errors": [{ "code": "SLOT_FULL", "message": "今日号源已满" }] }]
-  }
-}
-```
-
-### 医生接口
-
-```
-GET    /api/doctor/current             # 获取当前待接诊患者
-GET    /api/doctor/queue               # 获取本科室排队
-GET    /api/doctor/consulting          # 获取我正在接诊的患者
-POST   /api/doctor/consult/start/:id   # 开始接诊
-POST   /api/doctor/consult/complete/:id # 完成接诊
-GET    /api/doctor/history             # 历史接诊记录
-```
-
-### 公共接口
-
-```
-GET    /api/public/departments         # 获取活跃科室列表
-GET    /api/public/queue/status/:dept_id  # 获取队列状态
-GET    /api/public/queue/display/:dept_id # 获取叫号屏数据
-GET    /api/public/audit-logs          # 审计日志（支持 action/user_id/date/分页 组合筛选）
-GET    /api/public/reports/daily       # 导出日报 JSON
-GET    /api/public/reports/daily/csv   # 导出日报 CSV
-```
-
-## 数据模型
-
-### 核心表结构
-
-- **users**: 用户表（管理员、护士、医生）
-- **departments**: 科室表
-- **daily_slots**: 每日号源配置
-- **closed_periods**: 停诊时段
-- **patients**: 患者表
-- **queue_records**: 排队记录表（核心业务表）
-  - 状态: waiting（等待）→ called（已叫号）→ consulting（就诊中）→ completed（已完成）
-  - 其他状态: missed（过号）、returned（退回）
-- **consultation_records**: 诊疗记录表
-- **audit_logs**: 审计日志表
-
-## 关键业务规则
-
-1. **满号检测**: 挂号前检查总号源和现场加号上限
-2. **停诊检测**: 挂号前检查科室是否停诊
-3. **重复挂号**: 同一患者同一天同一科室只能挂一个号
-4. **叫号规则**: 同一时间只能有一位患者在就诊
-5. **越权检测**: 医生只能接诊本科室、由自己接诊的患者
-6. **状态流转**: 严格的状态机控制，不允许逆向操作
-7. **过号幂等**: 对 `missed` 状态重复过号视为成功（幂等），不重复写审计、不改状态；对其它非 `called` 状态才返回 400
-8. **退回限制**: 已完成或正在就诊的患者不能退回
-9. **数据一致性**: 所有操作记录审计日志，可追溯
-
-## 可用命令
-
-```bash
-npm start      # 启动服务
-npm run init   # 初始化数据库表
-npm run seed   # 插入样例数据
-npm run reset  # 重置数据库（删除+重建+插入样例）
-node scripts/test-regression.js     # 回归测试：过号幂等 + 审计筛选
-node scripts/test-after-restart.js  # 重启后一致性复测
-node scripts/test-followup.js       # 随访模块完整测试
-node scripts/test-followup-restart.js  # 随访模块重启后一致性测试
-```
-
-## 项目结构
-
-```
-.
-├── server.js              # 主服务器入口
+lfc-00023/
+├── server.js                  # 服务入口
 ├── package.json
-├── .env                   # 环境变量
+├── data/
+│   └── clinic.db              # SQLite 数据库（WAL 模式）
 ├── scripts/
-│   ├── init-db.js         # 数据库初始化（含随访表）
-│   ├── seed-data.js       # 样例数据
-│   ├── reset-db.js        # 数据库重置
-│   ├── test-regression.js # 回归测试（过号幂等 + 审计筛选）
-│   ├── test-after-restart.js # 重启后一致性复测
-│   ├── test-followup.js   # 随访模块完整测试
-│   └── test-followup-restart.js # 随访模块重启后一致性测试
+│   ├── init-db.js             # 初始化建表（仅 CREATE IF NOT EXISTS）
+│   ├── seed-data.js           # 导入样例数据 + 默认配置
+│   ├── test-exam.js           # 主回归测试（77 项）
+│   └── test-exam-restart.js   # 重启恢复测试（28 项）
 ├── src/
-│   ├── db/index.js        # 数据库连接
-│   ├── middleware/auth.js # 认证中间件
+│   ├── db/
+│   │   └── index.js           # SQLite 连接（启用 WAL）
 │   ├── utils/
-│   │   ├── audit.js       # 审计日志
-│   │   ├── queue.js       # 队列工具函数
-│   │   └── followup.js    # 随访模块核心工具函数
+│   │   ├── exam.js            # 检查改约核心工具层（状态机、事务、别名、CSV）
+│   │   └── ...                # 其他业务工具
+│   ├── middleware/
+│   │   └── auth.js            # JWT 认证中间件
 │   └── routes/
-│       ├── auth.js        # 认证接口
-│       ├── admin.js       # 管理员接口（含随访管理）
-│       ├── nurse.js       # 护士接口（含随访提醒）
-│       ├── doctor.js      # 医生接口（含随访计划）
-│       └── public.js      # 公共接口
-└── public/                # 前端页面
-    ├── index.html
-    ├── login.html
-    ├── admin.html         # 含随访管理标签页
-    ├── nurse.html         # 含随访提醒标签页
-    ├── doctor.html        # 含随访计划管理标签页
-    ├── display.html
-    ├── css/style.css
-    └── js/api.js          # 含随访API包装
+│       ├── doctor.js          # 医生端 API
+│       ├── nurse.js           # 护士台 API
+│       ├── admin.js           # 管理员 API
+│       └── ...
+└── public/
+    ├── login.html             # 登录
+    ├── doctor.html            # 医生站前端
+    ├── nurse.html             # 护士台前端
+    ├── admin.html             # 管理员后台
+    ├── display.html           # 叫号屏
+    ├── css/
+    ├── js/
+    │   ├── api.js             # 前端 API 封装
+    │   └── ...
+    └── ...
 ```
 
-## 场景十六：导入沙箱模块 - 反复演练不碰正式数据
+---
 
-### 16.1 功能概述
+## 技术栈说明
 
-导入沙箱模块允许管理员和护士在提交到正式数据之前，对 CSV 导入任务进行反复演练。整个过程完全不碰正式的排队记录数据，所有操作都在独立的沙箱表中完成。
+- **后端**: Node.js 20 + Express 4
+- **数据库**: SQLite (better-sqlite3)，WAL 模式保证并发与 ACID
+- **认证**: JWT (jsonwebtoken) + bcryptjs 密码散列
+- **前端**: 原生 HTML/CSS/JavaScript（无构建依赖）
+- **事务**: 所有多表变更通过 `db.transaction(() => {...})` 原子提交
+- **时区**: SQLite `CURRENT_TIMESTAMP` 存储 UTC，JS 解析时 `replace(' ', 'T') + 'Z'` 保证 UTC 正确
+- **字段别名**: 后端兼容两套命名（urgency ↔ priority, scheduled_slot_id ↔ slot_id, requested_start_date ↔ desired_start_date, config_key ↔ key 等），通过 `aliasOrder` / `aliasConfig` 统一输出
 
-核心特性：
-- **模板版本管理**：支持 v1（标准模板）和 v2（扩展模板）
-- **生效范围控制**：按科室、全部或自定义范围
-- **字段映射保存**：CSV 列名与系统字段的映射关系自动保存
-- **校验结果持久化**：每条记录的校验错误、冲突类型、冲突详情
-- **新增/覆盖/跳过摘要**：预检后自动统计各类动作数量
-- **确认痕迹审计**：每次预检、演练、撤销、作废、提交均记录操作人、时间和摘要
-- **跨重启恢复**：所有沙箱状态持久化在 SQLite，服务重启后完整恢复
-- **同名任务冲突处理**：不允许创建同名未作废的任务
-- **角色权限隔离**：普通护士只能查看和操作自己创建的任务，管理员可查看全部
-- **单条撤销**：可针对单条演练成功的记录单独撤销
-- **整批作废**：一键作废整个沙箱任务
-- **重新导入**：清空当前结果回到草稿状态重新开始
-- **失败重试入口**：最终提交时返回所有失败记录，便于重试
-- **导出报告**：CSV 报告包含所有记录明细和完整的操作确认痕迹
+---
 
-### 16.2 完整沙箱操作流程
+## 许可证
 
-1. **登录管理员/护士账号**
-2. **进入「导入沙箱」标签页**
-3. **创建沙箱任务**：填写任务名称、选择模板版本、目标数据集和生效范围
-4. **上传/粘贴 CSV**：或直接在文本框中粘贴 CSV 内容
-5. **执行预检**：系统解析 CSV、校验字段、检测冲突，显示新增/覆盖/跳过/失败统计
-6. **演练确认**：在沙箱内模拟导入流程，生成虚拟排队号，不写入正式表
-7. **（可选）单条撤销**：对不想要的演练记录单独撤销，填写撤销原因
-8. **（可选）整批作废**：放弃整个任务，填写作废原因
-9. **（可选）重新导入**：清空当前结果，回到草稿状态重新预检
-10. **管理员审批（可选）**：管理员可对演练完成的任务进行通过或拒绝
-11. **最终提交**：将沙箱中校验通过且未撤销的记录写入正式数据，关联生成标准导入批次
-12. **查看失败重试入口**：提交结果返回所有失败记录及其原因
-13. **导出报告**：下载包含完整明细和操作确认痕迹的 CSV 报告
-
-### 16.3 状态流转
-
-```
-draft(草稿) → prechecked(预检完成) → practiced(演练完成) 
-    → approved(审批通过)/rejected(审批拒绝) → submitted(已提交)
-    或任何状态 → voided(已作废)
-    任何非最终状态 → reimport → draft(回到草稿)
-```
-
-### 16.4 权限控制
-
-| 操作 | 管理员 | 护士（自己的任务） | 护士（他人任务） | 医生 |
-|------|--------|------------------|----------------|------|
-| 创建任务 | ✅ | ✅ | ❌ | ❌ |
-| 查看列表 | 全部 | 仅自己 | ❌ | ❌ |
-| 查看详情 | ✅ | ✅ | ❌ | ❌ |
-| 预检/演练/撤销/作废 | ✅ | ✅ | ❌ | ❌ |
-| 审批通过/拒绝 | ✅ | ❌ | ❌ | ❌ |
-| 最终提交 | ✅ | ✅ | ❌ | ❌ |
-| 导出报告 | ✅ | ✅ | ❌ | ❌ |
-
-### 16.5 沙箱数据与正式数据隔离
-
-- 所有沙箱数据存储在以下独立表中，永不直接操作 `queue_records`：
-  - `sandbox_tasks`：任务主表
-  - `sandbox_records`：记录明细表
-  - `sandbox_confirmations`：操作确认痕迹表
-  - `sandbox_field_mappings`：字段映射表
-- 演练时生成的 `practice_queue_number`（虚拟排队号）使用 `10000+` 号段，与正式号段隔离
-- 只有在「最终提交」时，才会通过事务原子性地写入 `patients`、`queue_records` 和标准的 `import_batches`/`import_records` 表
-
-## 注意事项
-
-1. 数据库文件存储在 `data/clinic.db`，SQLite 文件，系统重启数据不丢失
-2. JWT Token 有效期 24 小时
-3. 密码使用 bcryptjs 加密存储
-4. 所有写操作均记录审计日志，包含操作人、时间、IP、详情
-5. 前端页面每 3-5 秒自动刷新数据
-6. 沙箱模块配置项（`.env`）：
-   - `SANDBOX_ENABLED=true`：启用沙箱模块
-   - `SANDBOX_REQUIRE_APPROVAL=false`：是否强制要求管理员审批后才能提交
-   - `SANDBOX_DEFAULT_TEMPLATE=v1`：默认模板版本
+内部系统使用

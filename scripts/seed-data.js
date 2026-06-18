@@ -85,6 +85,59 @@ function seed() {
   });
   console.log(`已插入 ${patients.length} 个患者样例数据`);
 
+  const examTypes = [
+    { name: '血常规检查', code: 'CBC', department_code: 'NK', description: '血液常规检验', duration: 5 },
+    { name: '尿常规检查', code: 'URINE', department_code: 'NK', description: '尿液常规检验', duration: 5 },
+    { name: '胸部X光', code: 'CHEST_XRAY', department_code: 'WK', description: '胸部正位片', duration: 15 },
+    { name: '腹部B超', code: 'ABD_US', department_code: 'WK', description: '腹部超声检查', duration: 20 },
+    { name: '心电图', code: 'ECG', department_code: 'NK', description: '常规心电图检查', duration: 10 },
+    { name: '肝功能检查', code: 'LFT', department_code: 'NK', description: '肝功生化检验', duration: 5 }
+  ];
+
+  const insertExamType = db.prepare(`
+    INSERT OR IGNORE INTO exam_types (name, code, department_id, description, default_duration)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  examTypes.forEach(et => {
+    insertExamType.run(et.name, et.code, deptMap[et.department_code], et.description, et.duration);
+  });
+  console.log(`已插入 ${examTypes.length} 个检查类型样例数据`);
+
+  const examTypeIds = db.prepare('SELECT id, code FROM exam_types').all();
+  const examTypeMap = {};
+  examTypeIds.forEach(e => examTypeMap[e.code] = e.id);
+
+  const timeSlots = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+                     '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'];
+  const endTimeMap = { '08:00': '08:30', '08:30': '09:00', '09:00': '09:30', '09:30': '10:00',
+                       '10:00': '10:30', '10:30': '11:00', '11:00': '11:30', '11:30': '12:00',
+                       '14:00': '14:30', '14:30': '15:00', '15:00': '15:30', '15:30': '16:00',
+                       '16:00': '16:30', '16:30': '17:00' };
+
+  const insertExamSlot = db.prepare(`
+    INSERT OR IGNORE INTO exam_slots (exam_type_id, date, start_time, end_time, total_capacity, waitlist_limit, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'available')
+  `);
+
+  const dayAfterTomorrow = new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0];
+  [today, tomorrow, dayAfterTomorrow].forEach(d => {
+    Object.values(examTypeMap).forEach(etId => {
+      timeSlots.forEach(st => {
+        insertExamSlot.run(etId, d, st, endTimeMap[st], 2, 3);
+      });
+    });
+  });
+  console.log('已插入检查排班样例数据');
+
+  const insertConfig = db.prepare(`
+    INSERT OR IGNORE INTO exam_configs (config_key, config_value, description, updated_by, updated_at)
+    VALUES (?, ?, ?, NULL, CURRENT_TIMESTAMP)
+  `);
+  insertConfig.run('reschedule_revert_window_minutes', '30', '前台审核后可撤回的时间窗口（分钟）');
+  insertConfig.run('waitlist_auto_promote', 'true', '取消/改约时是否自动转正候补');
+  insertConfig.run('waitlist_max_per_slot', '5', '每个时段最多候补人数');
+  console.log('已插入检查系统默认配置');
+
   console.log('样例数据插入完成！');
   console.log('\n=== 登录账号 ===');
   console.log('管理员: admin / admin123');

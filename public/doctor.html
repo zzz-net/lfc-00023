@@ -15,67 +15,198 @@
     </div>
   </div>
   <div class="container">
-    <div class="card">
-      <h2>当前接诊</h2>
-      <div id="currentPatient" style="text-align: center;">
-        <p style="color: #999;">暂无正在接诊的患者</p>
+    <div class="tabs">
+      <div class="tab active" data-tab="clinic">门诊接诊</div>
+      <div class="tab" data-tab="exam">检查改约与候补</div>
+    </div>
+
+    <div id="clinic" class="tab-content active">
+      <div class="card">
+        <h2>当前接诊</h2>
+        <div id="currentPatient" style="text-align: center;">
+          <p style="color: #999;">暂无正在接诊的患者</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>已叫号待接诊</h2>
+        <div id="waitingPatient" style="text-align: center;">
+          <p style="color: #999;">暂无待接诊患者</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>今日排队列表</h2>
+        <table id="queueTable">
+          <thead>
+            <tr><th>序号</th><th>姓名</th><th>性别</th><th>年龄</th><th>身份证号</th><th>类型</th><th>状态</th><th>操作</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>今日接诊记录</h2>
+        <div id="historyTableContainer"></div>
+      </div>
+
+      <div class="card">
+        <h2>随访计划管理</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>状态筛选</label>
+            <select id="followupStatusFilter" onchange="loadFollowups()">
+              <option value="">全部</option>
+              <option value="pending">待提醒</option>
+              <option value="contacted">已联系</option>
+              <option value="no_answer">未接通</option>
+              <option value="cancelled">已取消</option>
+              <option value="completed">已完成</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>日期范围</label>
+            <input type="date" id="followupStartDate" onchange="loadFollowups()">
+          </div>
+          <div class="form-group">
+            <label>至</label>
+            <input type="date" id="followupEndDate" onchange="loadFollowups()">
+          </div>
+        </div>
+        <table id="followupTable">
+          <thead>
+            <tr>
+              <th>患者姓名</th><th>科室</th><th>复诊日期</th><th>提醒方式</th>
+              <th>关联诊断</th><th>状态</th><th>创建时间</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
     </div>
 
-    <div class="card">
-      <h2>已叫号待接诊</h2>
-      <div id="waitingPatient" style="text-align: center;">
-        <p style="color: #999;">暂无待接诊患者</p>
+    <div id="exam" class="tab-content">
+      <div class="card">
+        <h2>开检查单</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>患者姓名</label>
+            <input type="text" id="examPatientName" placeholder="患者姓名">
+          </div>
+          <div class="form-group">
+            <label>身份证号</label>
+            <input type="text" id="examPatientIdCard" placeholder="身份证号">
+          </div>
+          <div class="form-group">
+            <label>性别</label>
+            <select id="examPatientGender">
+              <option value="男">男</option>
+              <option value="女">女</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>年龄</label>
+            <input type="number" id="examPatientAge" value="0" min="0">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>手机号</label>
+            <input type="text" id="examPatientPhone" placeholder="手机号">
+          </div>
+          <div class="form-group">
+            <label>检查类型</label>
+            <select id="examTypeSelect"></select>
+          </div>
+          <div class="form-group">
+            <label>优先级</label>
+            <select id="examPriority">
+              <option value="normal">普通</option>
+              <option value="urgent">加急</option>
+              <option value="emergency">急诊</option>
+            </select>
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="createExamOrder()">开检查单</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>临床诊断</label>
+            <input type="text" id="examClinicalDiagnosis" placeholder="临床诊断" style="width:100%;">
+          </div>
+          <div class="form-group">
+            <label>备注</label>
+            <input type="text" id="examOrderNotes" placeholder="备注（可选）" style="width:100%;">
+          </div>
+        </div>
       </div>
-    </div>
 
-    <div class="card">
-      <h2>今日排队列表</h2>
-      <table id="queueTable">
-        <thead>
-          <tr><th>序号</th><th>姓名</th><th>性别</th><th>年龄</th><th>身份证号</th><th>类型</th><th>状态</th><th>操作</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-
-    <div class="card">
-      <h2>今日接诊记录</h2>
-      <div id="historyTableContainer"></div>
-    </div>
-
-    <div class="card">
-      <h2>随访计划管理</h2>
-      <div class="form-row">
-        <div class="form-group">
-          <label>状态筛选</label>
-          <select id="followupStatusFilter" onchange="loadFollowups()">
-            <option value="">全部</option>
-            <option value="pending">待提醒</option>
-            <option value="contacted">已联系</option>
-            <option value="no_answer">未接通</option>
-            <option value="cancelled">已取消</option>
-            <option value="completed">已完成</option>
-          </select>
+      <div class="card">
+        <h2>我的检查单</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>状态筛选</label>
+            <select id="examOrderStatusFilter" onchange="loadExamOrders()">
+              <option value="">全部</option>
+              <option value="pending">待排班</option>
+              <option value="scheduled">已预约</option>
+              <option value="rescheduling">改约中</option>
+              <option value="completed">已完成</option>
+              <option value="cancelled">已取消</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>检查类型</label>
+            <select id="examOrderTypeFilter" onchange="loadExamOrders()">
+              <option value="">全部</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>日期范围</label>
+            <input type="date" id="examOrderStartDate" onchange="loadExamOrders()">
+          </div>
+          <div class="form-group">
+            <label>至</label>
+            <input type="date" id="examOrderEndDate" onchange="loadExamOrders()">
+          </div>
         </div>
-        <div class="form-group">
-          <label>日期范围</label>
-          <input type="date" id="followupStartDate" onchange="loadFollowups()">
-        </div>
-        <div class="form-group">
-          <label>至</label>
-          <input type="date" id="followupEndDate" onchange="loadFollowups()">
-        </div>
+        <table id="examOrderTable">
+          <thead>
+            <tr>
+              <th>单号</th><th>患者</th><th>检查类型</th><th>预约时段</th>
+              <th>优先级</th><th>状态</th><th>开单时间</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
-      <table id="followupTable">
-        <thead>
-          <tr>
-            <th>患者姓名</th><th>科室</th><th>复诊日期</th><th>提醒方式</th>
-            <th>关联诊断</th><th>状态</th><th>创建时间</th><th>操作</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+
+      <div class="card">
+        <h2>我的改约申请</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>状态筛选</label>
+            <select id="rescheduleStatusFilter" onchange="loadRescheduleRequests()">
+              <option value="">全部</option>
+              <option value="pending">待审核</option>
+              <option value="approved">已通过</option>
+              <option value="rejected">已驳回</option>
+              <option value="cancelled">已取消</option>
+              <option value="reverted">已撤回</option>
+            </select>
+          </div>
+        </div>
+        <table id="rescheduleTable">
+          <thead>
+            <tr>
+              <th>申请ID</th><th>检查单号</th><th>患者</th><th>原时段</th>
+              <th>期望日期</th><th>原因</th><th>状态</th><th>提交时间</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -142,6 +273,151 @@
     </div>
   </div>
 
+  <div id="examScheduleModal" class="modal">
+    <div class="modal-content">
+      <h3>预约检查时段</h3>
+      <div id="examScheduleInfo"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>日期</label>
+          <input type="date" id="scheduleSlotDate" onchange="loadScheduleSlots()">
+        </div>
+      </div>
+      <div id="scheduleSlotsContainer"></div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeExamScheduleModal()">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="examRescheduleModal" class="modal">
+    <div class="modal-content">
+      <h3>申请改约</h3>
+      <div id="rescheduleOrderInfo"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>期望开始日期</label>
+          <input type="date" id="rescheduleStartDate">
+        </div>
+        <div class="form-group">
+          <label>期望结束日期</label>
+          <input type="date" id="rescheduleEndDate">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>期望时段偏好</label>
+          <select id="rescheduleTimePref">
+            <option value="">不限</option>
+            <option value="morning">上午（8:00-12:00）</option>
+            <option value="afternoon">下午（13:30-17:30）</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>优先级提升</label>
+          <select id="reschedulePriority">
+            <option value="">不变</option>
+            <option value="urgent">加急</option>
+            <option value="emergency">急诊</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>改约原因 *</label>
+        <select id="rescheduleReason" style="width:100%;">
+          <option value="">请选择原因</option>
+          <option value="patient_request">患者要求</option>
+          <option value="doctor_schedule">医生时间冲突</option>
+          <option value="medical_reason">医学原因</option>
+          <option value="equipment">设备故障</option>
+          <option value="other">其他</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>详细说明</label>
+        <textarea id="rescheduleNotes" rows="3" style="width:100%;" placeholder="请详细说明改约原因"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeRescheduleModal()">取消</button>
+        <button class="btn btn-primary" onclick="submitReschedule()">提交改约申请</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="examCancelModal" class="modal">
+    <div class="modal-content">
+      <h3>取消检查单</h3>
+      <div id="examCancelInfo"></div>
+      <div class="form-group">
+        <label>取消原因 *</label>
+        <select id="examCancelReason" style="width:100%;">
+          <option value="">请选择取消原因</option>
+          <option value="patient_refuse">患者拒绝</option>
+          <option value="patient_no_show">患者未到</option>
+          <option value="doctor_decision">医生决定</option>
+          <option value="completed_elsewhere">外院已做</option>
+          <option value="contraindication">检查禁忌</option>
+          <option value="other">其他</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>备注</label>
+        <textarea id="examCancelNotes" rows="3" style="width:100%;" placeholder="备注信息"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeExamCancelModal()">取消</button>
+        <button class="btn btn-danger" onclick="submitExamCancel()">确认取消检查</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="examWaitlistModal" class="modal">
+    <div class="modal-content">
+      <h3>加入候补队列</h3>
+      <div id="waitlistInfo"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>候补日期</label>
+          <input type="date" id="waitlistDate">
+        </div>
+        <div class="form-group">
+          <label>优先级</label>
+          <select id="waitlistPriority">
+            <option value="normal">普通</option>
+            <option value="urgent">加急</option>
+            <option value="emergency">急诊</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>时段偏好</label>
+        <select id="waitlistTimePref" style="width:100%;">
+          <option value="">不限</option>
+          <option value="morning">上午（8:00-12:00）</option>
+          <option value="afternoon">下午（13:30-17:30）</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>备注</label>
+        <textarea id="waitlistNotes" rows="2" style="width:100%;" placeholder="候补备注"></textarea>
+      </div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeWaitlistModal()">取消</button>
+        <button class="btn btn-warning" onclick="submitWaitlist()">确认加入候补</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="examDetailModal" class="modal">
+    <div class="modal-content">
+      <h3>检查单详情</h3>
+      <div id="examDetailContent"></div>
+      <div style="text-align: right; margin-top: 20px;">
+        <button class="btn btn-default" onclick="closeExamDetailModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <div id="alert"></div>
   <script src="/js/api.js"></script>
   <script>
@@ -150,8 +426,27 @@
     let currentConsultPatientId = null;
     let currentConsultDeptId = null;
     let currentCancelFollowupId = null;
+    let currentExamOrderId = null;
+    let currentRescheduleOrderId = null;
+    let currentCancelExamOrderId = null;
+    let currentWaitlistOrderId = null;
+    let examTypes = [];
     if (!currentUser || currentUser.role !== 'doctor') window.location.href = 'login.html';
     document.getElementById('userInfo').textContent = `${currentUser.name} (医生)`;
+
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.tab).classList.add('active');
+        if (tab.dataset.tab === 'exam') {
+          loadExamTypes();
+          loadExamOrders();
+          loadRescheduleRequests();
+        }
+      });
+    });
 
     function escapeJs(str) {
       return (str || '').toString().replace(/'/g, "\\'").replace(/"/g, '\\"');
@@ -428,8 +723,401 @@
       }
     }
 
+    async function loadExamTypes() {
+      const result = await api.exam.getTypes('doctor');
+      examTypes = result.types || [];
+      const select = document.getElementById('examTypeSelect');
+      select.innerHTML = examTypes.map(t => `<option value="${t.id}">${t.name} (${t.duration_minutes}分钟)</option>`).join('');
+      const filter = document.getElementById('examOrderTypeFilter');
+      filter.innerHTML = '<option value="">全部</option>' + examTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+    }
+
+    async function createExamOrder() {
+      const patientName = document.getElementById('examPatientName').value.trim();
+      const idCard = document.getElementById('examPatientIdCard').value.trim();
+      const gender = document.getElementById('examPatientGender').value;
+      const age = parseInt(document.getElementById('examPatientAge').value) || 0;
+      const phone = document.getElementById('examPatientPhone').value.trim();
+      const examTypeId = parseInt(document.getElementById('examTypeSelect').value);
+      const priority = document.getElementById('examPriority').value;
+      const clinicalDiagnosis = document.getElementById('examClinicalDiagnosis').value.trim();
+      const notes = document.getElementById('examOrderNotes').value.trim();
+
+      if (!patientName || !idCard) return showAlert('请填写患者姓名和身份证号', 'error');
+      if (!examTypeId) return showAlert('请选择检查类型', 'error');
+
+      try {
+        const result = await api.exam.createOrder({
+          patient_name: patientName,
+          patient_id_card: idCard,
+          patient_gender: gender,
+          patient_age: age,
+          patient_phone: phone,
+          exam_type_id: examTypeId,
+          priority,
+          clinical_diagnosis: clinicalDiagnosis,
+          notes
+        }, 'doctor');
+        showAlert(`检查单已开单：${result.order.order_no}`);
+        loadExamOrders();
+        document.getElementById('examPatientName').value = '';
+        document.getElementById('examPatientIdCard').value = '';
+        document.getElementById('examPatientPhone').value = '';
+        document.getElementById('examClinicalDiagnosis').value = '';
+        document.getElementById('examOrderNotes').value = '';
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    const examOrderStatusMap = {
+      pending: '待排班', scheduled: '已预约', rescheduling: '改约中',
+      completed: '已完成', cancelled: '已取消'
+    };
+    const examOrderStatusClass = {
+      pending: 'status-waiting', scheduled: 'status-consulting', rescheduling: 'status-called',
+      completed: 'status-completed', cancelled: 'status-missed'
+    };
+    const priorityMap = { normal: '普通', urgent: '加急', emergency: '急诊' };
+    const priorityClass = { normal: 'status-completed', urgent: 'status-called', emergency: 'status-missed' };
+
+    async function loadExamOrders() {
+      const params = {};
+      const status = document.getElementById('examOrderStatusFilter').value;
+      const typeId = document.getElementById('examOrderTypeFilter').value;
+      const startDate = document.getElementById('examOrderStartDate').value;
+      const endDate = document.getElementById('examOrderEndDate').value;
+      if (status) params.status = status;
+      if (typeId) params.exam_type_id = typeId;
+      if (startDate) params.start_date = startDate;
+      if (endDate) params.end_date = endDate;
+
+      const result = await api.exam.getOrders(params, 'doctor');
+      const orders = result.orders || [];
+
+      if (orders.length === 0) {
+        document.querySelector('#examOrderTable tbody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">暂无检查单</td></tr>';
+        return;
+      }
+
+      document.querySelector('#examOrderTable tbody').innerHTML = orders.map(o => `
+        <tr>
+          <td>${o.order_no}</td>
+          <td>${o.patient_name}</td>
+          <td>${o.exam_type_name}</td>
+          <td>${o.scheduled_slot ? o.scheduled_slot.date + ' ' + o.scheduled_slot.start_time : '<span style="color:#999;">未排班</span>'}</td>
+          <td><span class="status-badge ${priorityClass[o.priority]}">${priorityMap[o.priority]}</span></td>
+          <td><span class="status-badge ${examOrderStatusClass[o.status]}">${examOrderStatusMap[o.status]}</span></td>
+          <td>${o.created_at ? o.created_at.slice(0, 16) : '-'}</td>
+          <td>
+            <div class="btn-group">
+              <button class="btn btn-sm btn-default" onclick="showExamDetail(${o.id})">详情</button>
+              ${o.status === 'pending' ? `<button class="btn btn-sm btn-primary" onclick="openExamScheduleModal(${o.id})">预约</button>` : ''}
+              ${o.status === 'scheduled' ? `
+                <button class="btn btn-sm btn-warning" onclick="openRescheduleModal(${o.id})">改约</button>
+                <button class="btn btn-sm btn-warning" onclick="openWaitlistModal(${o.id})">候补</button>
+              ` : ''}
+              ${(o.status === 'pending' || o.status === 'scheduled' || o.status === 'rescheduling') ? 
+                `<button class="btn btn-sm btn-danger" onclick="openExamCancelModal(${o.id})">取消</button>` : ''}
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function showExamDetail(orderId) {
+      const result = await api.exam.getOrderDetail(orderId, 'doctor');
+      const o = result.order;
+      const logs = result.change_logs || [];
+
+      let html = `
+        <div style="margin-bottom:15px;padding:12px;background:#f5f5f5;border-radius:4px;">
+          <p><strong>检查单号：</strong>${o.order_no} &nbsp; <strong>状态：</strong><span class="status-badge ${examOrderStatusClass[o.status]}">${examOrderStatusMap[o.status]}</span></p>
+          <p><strong>患者：</strong>${o.patient_name} (${o.patient_gender}, ${o.patient_age}岁) &nbsp; <strong>身份证：</strong>${o.patient_id_card}</p>
+          <p><strong>检查类型：</strong>${o.exam_type_name} &nbsp; <strong>优先级：</strong>${priorityMap[o.priority]}</p>
+          <p><strong>临床诊断：</strong>${o.clinical_diagnosis || '-'}</p>
+          <p><strong>开单医生：</strong>${o.doctor_name || '-'}</p>
+          ${o.scheduled_slot ? `<p><strong>预约时段：</strong>${o.scheduled_slot.date} ${o.scheduled_slot.start_time}-${o.scheduled_slot.end_time}</p>` : ''}
+          ${o.cancel_reason ? `<p><strong>取消原因：</strong>${o.cancel_reason} - ${o.cancel_notes || ''}</p>` : ''}
+          ${o.result ? `<p><strong>检查结果：</strong>${o.result}</p>` : ''}
+        </div>
+        <h4 style="color:#096dd9;margin-bottom:10px;">变更记录</h4>
+        <table>
+          <thead><tr><th>时间</th><th>变更类型</th><th>操作人</th><th>详情</th></tr></thead>
+          <tbody>
+      `;
+      if (logs.length === 0) {
+        html += '<tr><td colspan="4" style="text-align:center;color:#999;">暂无变更记录</td></tr>';
+      } else {
+        html += logs.map(l => `<tr><td>${l.created_at.slice(0,16)}</td><td>${l.change_type}</td><td>${l.operator_name || '-'}</td><td>${l.details || '-'}</td></tr>`).join('');
+      }
+      html += '</tbody></table>';
+      document.getElementById('examDetailContent').innerHTML = html;
+      document.getElementById('examDetailModal').classList.add('active');
+    }
+
+    function closeExamDetailModal() {
+      document.getElementById('examDetailModal').classList.remove('active');
+    }
+
+    async function openExamScheduleModal(orderId) {
+      currentExamOrderId = orderId;
+      const result = await api.exam.getOrderDetail(orderId, 'doctor');
+      const o = result.order;
+      document.getElementById('examScheduleInfo').innerHTML = `
+        <p style="margin-bottom:12px;padding:10px;background:#f5f5f5;border-radius:4px;">
+          <strong>${o.order_no}</strong> - ${o.patient_name} - ${o.exam_type_name}
+        </p>
+      `;
+      const today = new Date().toISOString().slice(0, 10);
+      document.getElementById('scheduleSlotDate').value = today;
+      await loadScheduleSlots();
+      document.getElementById('examScheduleModal').classList.add('active');
+    }
+
+    function closeExamScheduleModal() {
+      currentExamOrderId = null;
+      document.getElementById('examScheduleModal').classList.remove('active');
+    }
+
+    async function loadScheduleSlots() {
+      if (!currentExamOrderId) return;
+      const detail = await api.exam.getOrderDetail(currentExamOrderId, 'doctor');
+      const date = document.getElementById('scheduleSlotDate').value;
+      if (!date) return;
+      const result = await api.exam.getSlots({ exam_type_id: detail.order.exam_type_id, date, available_only: 1 }, 'doctor');
+      const slots = result.slots || [];
+      const container = document.getElementById('scheduleSlotsContainer');
+      if (slots.length === 0) {
+        container.innerHTML = '<p style="color:#999;text-align:center;padding:20px;">该日期暂无可用时段</p>';
+        return;
+      }
+      container.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;">
+          ${slots.map(s => `
+            <button class="btn ${s.remaining_count > 0 ? 'btn-default' : 'btn-default'}" 
+              style="${s.remaining_count > 0 ? 'background:#f6ffed;color:#52c41a;' : 'background:#f0f0f0;color:#999;opacity:0.6;'}"
+              ${s.remaining_count > 0 ? `onclick="confirmScheduleSlot(${currentExamOrderId}, ${s.id})"` : 'disabled'}>
+              ${s.start_time}-${s.end_time}<br>
+              <small>${s.remaining_count}/${s.capacity} 剩余</small>
+            </button>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    async function confirmScheduleSlot(orderId, slotId) {
+      if (!confirm('确认预约该时段？')) return;
+      try {
+        await api.exam.scheduleOrder(orderId, slotId, 'doctor');
+        showAlert('预约成功');
+        closeExamScheduleModal();
+        loadExamOrders();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    async function openRescheduleModal(orderId) {
+      currentRescheduleOrderId = orderId;
+      const result = await api.exam.getOrderDetail(orderId, 'doctor');
+      const o = result.order;
+      document.getElementById('rescheduleOrderInfo').innerHTML = `
+        <p style="margin-bottom:12px;padding:10px;background:#fffbe6;border-radius:4px;">
+          <strong>${o.order_no}</strong> - ${o.patient_name}<br>
+          原时段：${o.scheduled_slot.date} ${o.scheduled_slot.start_time}-${o.scheduled_slot.end_time} - ${o.exam_type_name}
+        </p>
+      `;
+      const today = new Date();
+      document.getElementById('rescheduleStartDate').value = today.toISOString().slice(0,10);
+      const end = new Date(today.getTime() + 14*86400000);
+      document.getElementById('rescheduleEndDate').value = end.toISOString().slice(0,10);
+      document.getElementById('rescheduleTimePref').value = '';
+      document.getElementById('reschedulePriority').value = '';
+      document.getElementById('rescheduleReason').value = '';
+      document.getElementById('rescheduleNotes').value = '';
+      document.getElementById('examRescheduleModal').classList.add('active');
+    }
+
+    function closeRescheduleModal() {
+      currentRescheduleOrderId = null;
+      document.getElementById('examRescheduleModal').classList.remove('active');
+    }
+
+    async function submitReschedule() {
+      const startDate = document.getElementById('rescheduleStartDate').value;
+      const endDate = document.getElementById('rescheduleEndDate').value;
+      const timePref = document.getElementById('rescheduleTimePref').value;
+      const newPriority = document.getElementById('reschedulePriority').value;
+      const reason = document.getElementById('rescheduleReason').value;
+      const notes = document.getElementById('rescheduleNotes').value.trim();
+
+      if (!startDate || !endDate) return showAlert('请选择期望日期范围', 'error');
+      if (!reason) return showAlert('请选择改约原因', 'error');
+
+      try {
+        await api.exam.requestReschedule({
+          exam_order_id: currentRescheduleOrderId,
+          desired_start_date: startDate,
+          desired_end_date: endDate,
+          desired_time_preference: timePref || null,
+          new_priority: newPriority || null,
+          reason,
+          notes
+        });
+        showAlert('改约申请已提交');
+        closeRescheduleModal();
+        loadExamOrders();
+        loadRescheduleRequests();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    async function openExamCancelModal(orderId) {
+      currentCancelExamOrderId = orderId;
+      const result = await api.exam.getOrderDetail(orderId, 'doctor');
+      const o = result.order;
+      document.getElementById('examCancelInfo').innerHTML = `
+        <p style="margin-bottom:12px;padding:10px;background:#fff1f0;border-radius:4px;">
+          <strong>${o.order_no}</strong> - ${o.patient_name} - ${o.exam_type_name}<br>
+          当前状态：<span class="status-badge ${examOrderStatusClass[o.status]}">${examOrderStatusMap[o.status]}</span>
+          ${o.scheduled_slot ? `<br>原时段：${o.scheduled_slot.date} ${o.scheduled_slot.start_time}-${o.scheduled_slot.end_time}` : ''}
+        </p>
+      `;
+      document.getElementById('examCancelReason').value = '';
+      document.getElementById('examCancelNotes').value = '';
+      document.getElementById('examCancelModal').classList.add('active');
+    }
+
+    function closeExamCancelModal() {
+      currentCancelExamOrderId = null;
+      document.getElementById('examCancelModal').classList.remove('active');
+    }
+
+    async function submitExamCancel() {
+      const reason = document.getElementById('examCancelReason').value;
+      const notes = document.getElementById('examCancelNotes').value.trim();
+      if (!reason) return showAlert('请选择取消原因', 'error');
+      if (!confirm('确认取消该检查单？此操作将释放预约名额。')) return;
+      try {
+        await api.exam.cancelOrder(currentCancelExamOrderId, reason + (notes ? ' - ' + notes : ''), 'doctor');
+        showAlert('检查单已取消');
+        closeExamCancelModal();
+        loadExamOrders();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    async function openWaitlistModal(orderId) {
+      currentWaitlistOrderId = orderId;
+      const result = await api.exam.getOrderDetail(orderId, 'doctor');
+      const o = result.order;
+      document.getElementById('waitlistInfo').innerHTML = `
+        <p style="margin-bottom:12px;padding:10px;background:#fff7e6;border-radius:4px;">
+          <strong>${o.order_no}</strong> - ${o.patient_name} - ${o.exam_type_name}<br>
+          加入候补后，当有患者取消/改约空出名额时，将自动按候补顺序转正。
+        </p>
+      `;
+      const today = new Date();
+      document.getElementById('waitlistDate').value = today.toISOString().slice(0,10);
+      document.getElementById('waitlistPriority').value = o.priority;
+      document.getElementById('waitlistTimePref').value = '';
+      document.getElementById('waitlistNotes').value = '';
+      document.getElementById('examWaitlistModal').classList.add('active');
+    }
+
+    function closeWaitlistModal() {
+      currentWaitlistOrderId = null;
+      document.getElementById('examWaitlistModal').classList.remove('active');
+    }
+
+    async function submitWaitlist() {
+      const targetDate = document.getElementById('waitlistDate').value;
+      const priority = document.getElementById('waitlistPriority').value;
+      const timePref = document.getElementById('waitlistTimePref').value;
+      const notes = document.getElementById('waitlistNotes').value.trim();
+      if (!targetDate) return showAlert('请选择候补日期', 'error');
+      if (!confirm('确认加入候补队列？')) return;
+      try {
+        const detail = await api.exam.getOrderDetail(currentWaitlistOrderId, 'doctor');
+        await api.exam.addWaitlist({
+          exam_order_id: currentWaitlistOrderId,
+          exam_type_id: detail.order.exam_type_id,
+          target_date: targetDate,
+          priority,
+          time_preference: timePref || null,
+          notes
+        });
+        showAlert('已加入候补队列');
+        closeWaitlistModal();
+        loadExamOrders();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    const rescheduleStatusMap = {
+      pending: '待审核', approved: '已通过', rejected: '已驳回',
+      cancelled: '已取消', reverted: '已撤回'
+    };
+    const rescheduleStatusClass = {
+      pending: 'status-waiting', approved: 'status-consulting', rejected: 'status-missed',
+      cancelled: 'status-completed', reverted: 'status-returned'
+    };
+    const reasonMap = {
+      patient_request: '患者要求', doctor_schedule: '医生时间冲突',
+      medical_reason: '医学原因', equipment: '设备故障', other: '其他'
+    };
+
+    async function loadRescheduleRequests() {
+      const params = {};
+      const status = document.getElementById('rescheduleStatusFilter').value;
+      if (status) params.status = status;
+      const result = await api.exam.getReschedule(params, 'doctor');
+      const reqs = result.requests || [];
+      if (reqs.length === 0) {
+        document.querySelector('#rescheduleTable tbody').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">暂无改约申请</td></tr>';
+        return;
+      }
+      document.querySelector('#rescheduleTable tbody').innerHTML = reqs.map(r => `
+        <tr>
+          <td>#${r.id}</td>
+          <td>${r.order_no}</td>
+          <td>${r.patient_name}</td>
+          <td>${r.original_slot ? r.original_slot.date + ' ' + r.original_slot.start_time : '-'}</td>
+          <td>${r.desired_start_date} ~ ${r.desired_end_date}</td>
+          <td>${reasonMap[r.reason] || r.reason}</td>
+          <td><span class="status-badge ${rescheduleStatusClass[r.status]}">${rescheduleStatusMap[r.status]}</span></td>
+          <td>${r.created_at.slice(0,16)}</td>
+          <td>${r.status === 'pending' ? `<button class="btn btn-sm btn-danger" onclick="cancelRescheduleRequest(${r.id})">撤回</button>` : '-'}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function cancelRescheduleRequest(id) {
+      if (!confirm('确认撤回此改约申请？')) return;
+      try {
+        await api.exam.cancelReschedule(id, 'doctor');
+        showAlert('改约申请已撤回');
+        loadRescheduleRequests();
+        loadExamOrders();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
     loadAll();
-    setInterval(loadAll, 5000);
+    setInterval(() => {
+      if (document.querySelector('.tab[data-tab="clinic"]').classList.contains('active')) {
+        loadAll();
+      }
+      if (document.querySelector('.tab[data-tab="exam"]').classList.contains('active')) {
+        loadExamOrders();
+        loadRescheduleRequests();
+      }
+    }, 10000);
   </script>
 </body>
 </html>
