@@ -1,4 +1,5 @@
 const db = require('../db');
+const waitlistService = require('./waitlistService');
 
 function generateOrderNo() {
   return 'EX' + Date.now() + Math.floor(Math.random() * 1000);
@@ -510,219 +511,31 @@ function revertReschedule(requestId, userId, role, ip, revertReason) {
 }
 
 function addToWaitlist(data, userId, role, ip) {
-  const examOrderId = data.exam_order_id;
-  const examTypeId = data.exam_type_id;
-  const targetDate = data.target_date;
-  const preferredTime = data.preferred_time || data.time_preference || null;
-  const priorityInput = data.priority;
-  if (!examOrderId || !examTypeId || !targetDate) {
-    return { success: false, error: '检查单ID、检查类型ID和目标日期为必填' };
+  const result = waitlistService.addWaitlist(data, userId, role, ip);
+  if (result.success && result.waitlist) {
+    result.waitlist = aliasWaitlist(result.waitlist);
   }
-  const order = db.prepare('SELECT * FROM exam_orders WHERE id = ?').get(examOrderId);
-  if (!order) return { success: false, error: '检查单不存在', code: 404 };
-  if (role === 'doctor' && order.ordered_by !== userId) {
-    return { success: false, error: '无权操作其他医生的检查单', code: 403 };
-  }
-  let priorityVal = 0;
-  if (priorityInput !== undefined && priorityInput !== null && priorityInput !== '') {
-    if (typeof priorityInput === 'number') {
-      priorityVal = priorityInput;
-    } else if (typeof priorityInput === 'string') {
-      if (priorityInput === 'emergency') priorityVal = 2;
-      else if (priorityInput === 'urgent') priorityVal = 1;
-      else if (priorityInput === 'normal') priorityVal = 0;
-      else {
-        const pv = parseInt(priorityInput);
-        if (!isNaN(pv)) priorityVal = pv;
-      }
-    }
-  } else {
-    if (order.urgency === 'emergency') priorityVal = 2;
-    else if (order.urgency === 'urgent') priorityVal = 1;
-  }
-  try {
-    const stmt = db.prepare(`
-      INSERT INTO exam_waitlist
-      (exam_order_id, patient_id, exam_type_id, target_date,
-       preferred_time, priority, status, added_by)
-      VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?)
-    `);
-    const result = stmt.run(examOrderId, order.patient_id, examTypeId, targetDate, preferredTime, priorityVal, userId);
-    const wlId = result.lastInsertRowid;
-    logChange(examOrderId, 'waitlist_add', order.status, order.status, null, null,
-      { waitlist_id: wlId, target_date: targetDate, priority: priorityVal,
-        preferred_time: preferredTime }, userId, ip);
-    const fullWL = db.prepare('SELECT * FROM exam_waitlist WHERE id = ?').get(wlId);
-    return { success: true, waitlist: aliasWaitlist(fullWL) };
-  } catch (e) {
-    if (e.message && e.message.indexOf('UNIQUE') >= 0 && e.message.indexOf('idx_waitlist_active') >= 0) {
-      return { success: false, error: '该检查单在该日期已有候补记录' };
-    }
-    return { success: false, error: e.message };
-  }
+  return result;
 }
 
 function tryPromoteWaitlistForSlot(slotId, userId, ip) {
-  const slot = db.prepare('SELECT * FROM exam_slots WHERE id = ?').get(slotId);
-  if (!slot) return false;
-  if (slot.booked_count >= slot.total_capacity) return false;
-  const autoPromote = getConfig('waitlist_auto_promote', 'true') === 'true';
-  if (!autoPromote) return false;
-  const remaining = slot.total_capacity - slot.booked_count;
-  if (remaining <= 0) return false;
-  const promoteLimit = 1;
-  const waiters = db.prepare(`
-    SELECT w.* FROM exam_waitlist w
-    WHERE w.exam_type_id = ? AND w.target_date = ? AND w.status = 'waiting'
-    ORDER BY w.priority DESC, w.created_at ASC
-    LIMIT ?
-  `).all(slot.exam_type_id, slot.date, Math.min(remaining, promoteLimit));
-  if (waiters.length === 0) return false;
-  let promotedCount = 0;
-  for (let i = 0; i < waiters.length; i++) {
-    const w = waiters[i];
-    const s = db.prepare('SELECT * FROM exam_slots WHERE id = ?').get(slotId);
-    if (!s || s.booked_count >= s.total_capacity) break;
-    const order = db.prepare('SELECT * FROM exam_orders WHERE id = ?').get(w.exam_order_id);
-    if (!order) continue;
-    if (order.status === 'completed' || order.status === 'cancelled') continue;
-    try {
-      const oldSlotId = order.scheduled_slot_id;
-      const tx = db.transaction(function () {
-        db.prepare(`
-          UPDATE exam_waitlist SET
-            status = 'promoted', promoted_by = ?, promoted_at = CURRENT_TIMESTAMP,
-            promoted_slot_id = ?, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(userId || null, slotId, w.id);
-        db.prepare(`
-          UPDATE exam_orders SET status = 'scheduled', scheduled_slot_id = ?,
-            updated_at = CURRENT_TIMESTAMP WHERE id = ?
-        `).run(slotId, w.exam_order_id);
-        db.prepare(`
-          UPDATE exam_slots SET booked_count = booked_count + 1,
-            status = CASE WHEN booked_count + 1 >= total_capacity THEN 'full' ELSE 'available' END,
-            updated_at = CURRENT_TIMESTAMP WHERE id = ?
-        `).run(slotId);
-        if (oldSlotId && oldSlotId !== slotId) {
-          db.prepare(`
-            UPDATE exam_slots SET booked_count = MAX(0, booked_count - 1),
-              status = CASE WHEN MAX(0, booked_count - 1) < total_capacity THEN 'available' ELSE status END,
-              updated_at = CURRENT_TIMESTAMP WHERE id = ?
-          `).run(oldSlotId);
-        }
-      });
-      tx();
-      promotedCount++;
-      logChange(w.exam_order_id, 'waitlist_promote', order.status, 'scheduled',
-        oldSlotId, slotId,
-        { waitlist_id: w.id, slot_date: slot.date, start_time: slot.start_time },
-        userId || null, ip);
-      sendNotification(null, w.patient_id, w.exam_order_id, 'waitlist_promoted',
-        '候补转正成功',
-        '您的' + getExamTypeName(w.exam_type_id) + '候补已安排到' + slot.date + ' ' + slot.start_time);
-      if (oldSlotId && oldSlotId !== slotId) {
-        tryPromoteWaitlistForSlot(oldSlotId, userId, ip);
-      }
-    } catch (e) {
-      console.error('候补转正失败:', e.message);
-    }
-  }
-  return promotedCount > 0;
+  return waitlistService.autoPromoteForSlot(slotId, userId, ip);
 }
 
 function promoteWaitlist(waitlistId, userId, role, ip) {
-  if (role !== 'admin' && role !== 'nurse') {
-    return { success: false, error: '无权执行候补转正', code: 403 };
+  const result = waitlistService.promoteWaitlistEntry(waitlistId, userId, role, ip);
+  if (result.success && result.order) {
+    result.order = aliasOrder(result.order);
   }
-  const w = db.prepare('SELECT * FROM exam_waitlist WHERE id = ?').get(waitlistId);
-  if (!w) return { success: false, error: '候补记录不存在', code: 404 };
-  if (w.status !== 'waiting') {
-    return { success: false, error: '该候补状态' + w.status + '不能转正' };
-  }
-  const slots = db.prepare(`
-    SELECT * FROM exam_slots
-    WHERE exam_type_id = ? AND date = ? AND status = 'available'
-      AND booked_count < total_capacity
-    ORDER BY start_time ASC
-  `).all(w.exam_type_id, w.target_date);
-  if (slots.length === 0) return { success: false, error: '目标日期无可用时段' };
-  const slot = slots[0];
-  const order = db.prepare('SELECT * FROM exam_orders WHERE id = ?').get(w.exam_order_id);
-  if (!order) return { success: false, error: '检查单不存在', code: 404 };
-  const oldSlotId = order.scheduled_slot_id;
-  const tx = db.transaction(function () {
-    db.prepare(`
-      UPDATE exam_waitlist SET
-        status = 'promoted', promoted_by = ?, promoted_at = CURRENT_TIMESTAMP,
-        promoted_slot_id = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(userId, slot.id, waitlistId);
-    db.prepare(`
-      UPDATE exam_orders SET status = 'scheduled', scheduled_slot_id = ?,
-        updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `).run(slot.id, w.exam_order_id);
-    db.prepare(`
-      UPDATE exam_slots SET booked_count = booked_count + 1,
-        status = CASE WHEN booked_count + 1 >= total_capacity THEN 'full' ELSE 'available' END,
-        updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `).run(slot.id);
-    if (oldSlotId && oldSlotId !== slot.id) {
-      db.prepare(`
-        UPDATE exam_slots SET booked_count = MAX(0, booked_count - 1),
-          status = CASE WHEN MAX(0, booked_count - 1) < total_capacity THEN 'available' ELSE status END,
-          updated_at = CURRENT_TIMESTAMP WHERE id = ?
-      `).run(oldSlotId);
-    }
-  });
-  try {
-    tx();
-    logChange(w.exam_order_id, 'waitlist_promote', order.status, 'scheduled',
-      oldSlotId, slot.id,
-      { waitlist_id: waitlistId, slot_date: slot.date, start_time: slot.start_time },
-      userId, ip);
-    sendNotification(null, w.patient_id, w.exam_order_id, 'waitlist_promoted',
-      '候补转正成功',
-      '您的' + getExamTypeName(w.exam_type_id) + '候补已安排到' + slot.date + ' ' + slot.start_time);
-    if (oldSlotId && oldSlotId !== slot.id) {
-      tryPromoteWaitlistForSlot(oldSlotId, userId, ip);
-    }
-    const fullOrder = db.prepare('SELECT * FROM exam_orders WHERE id = ?').get(w.exam_order_id);
-    return { success: true, order: aliasOrder(fullOrder), slot_id: slot.id };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
+  return result;
 }
 
 function cancelWaitlist(waitlistId, userId, role, ip, cancelReason) {
-  const w = db.prepare('SELECT * FROM exam_waitlist WHERE id = ?').get(waitlistId);
-  if (!w) return { success: false, error: '候补记录不存在', code: 404 };
-  if (w.status !== 'waiting') {
-    return { success: false, error: '该候补状态' + w.status + '不能取消' };
+  const result = waitlistService.cancelWaitlist(waitlistId, userId, role, ip, cancelReason);
+  if (result.success && result.waitlist) {
+    result.waitlist = aliasWaitlist(result.waitlist);
   }
-  const order = db.prepare('SELECT * FROM exam_orders WHERE id = ?').get(w.exam_order_id);
-  if (!order) return { success: false, error: '检查单不存在', code: 404 };
-  if (role === 'doctor' && order.ordered_by !== userId) {
-    return { success: false, error: '无权操作其他医生的检查单', code: 403 };
-  }
-  if (role !== 'admin' && role !== 'nurse' && order.ordered_by !== userId) {
-    return { success: false, error: '无权操作', code: 403 };
-  }
-  try {
-    db.prepare(`
-      UPDATE exam_waitlist SET
-        status = 'cancelled', cancel_reason = ?, cancelled_by = ?,
-        cancelled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(cancelReason || null, userId, waitlistId);
-    logChange(w.exam_order_id, 'waitlist_cancel', order.status, order.status,
-      null, null, { waitlist_id: waitlistId, cancel_reason: cancelReason || null },
-      userId, ip);
-    const fullWL = db.prepare('SELECT * FROM exam_waitlist WHERE id = ?').get(waitlistId);
-    return { success: true, waitlist: aliasWaitlist(fullWL) };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
+  return result;
 }
 
 function cancelExamOrder(orderId, userId, role, ip, cancelReason) {
@@ -755,12 +568,6 @@ function cancelExamOrder(orderId, userId, role, ip, cancelReason) {
         status = 'cancelled', updated_at = CURRENT_TIMESTAMP
       WHERE exam_order_id = ? AND status IN ('pending', 'approved')
     `).run(orderId);
-    db.prepare(`
-      UPDATE exam_waitlist SET
-        status = 'cancelled', cancel_reason = '检查单已取消', cancelled_by = ?,
-        cancelled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE exam_order_id = ? AND status = 'waiting'
-    `).run(userId, orderId);
   });
   try {
     tx();
@@ -769,7 +576,7 @@ function cancelExamOrder(orderId, userId, role, ip, cancelReason) {
     sendNotification(null, order.patient_id, orderId, 'exam_cancelled',
       '检查已取消',
       '您的' + getExamTypeName(order.exam_type_id) + '检查已取消：' + (cancelReason || '原因未说明'));
-    if (oldSlotId) tryPromoteWaitlistForSlot(oldSlotId, userId, ip);
+    waitlistService.onExamOrderCancelled(orderId, userId, ip);
     const fullOrder = db.prepare('SELECT * FROM exam_orders WHERE id = ?').get(orderId);
     return { success: true, order: aliasOrder(fullOrder) };
   } catch (e) {
@@ -949,34 +756,7 @@ function listRescheduleRequests(query, userId, role) {
 }
 
 function listWaitlist(query, userId, role) {
-  try {
-    const q = query || {};
-    let sql = `
-      SELECT w.*, p.name AS patient_name, p.id_card AS patient_id_card,
-        t.name AS exam_type_name,
-        s.date AS promoted_slot_date, s.start_time AS promoted_slot_start_time,
-        u1.username AS adder_name, u1.name AS adder_real_name,
-        u2.username AS promoter_name, u2.name AS promoter_real_name,
-        o.order_no, o.urgency AS order_urgency, o.status AS order_status
-      FROM exam_waitlist w
-      LEFT JOIN patients p ON w.patient_id = p.id
-      LEFT JOIN exam_types t ON w.exam_type_id = t.id
-      LEFT JOIN exam_slots s ON w.promoted_slot_id = s.id
-      LEFT JOIN users u1 ON w.added_by = u1.id
-      LEFT JOIN users u2 ON w.promoted_by = u2.id
-      LEFT JOIN exam_orders o ON w.exam_order_id = o.id
-      WHERE 1=1
-    `;
-    const params = [];
-    if (q.status) { sql += ' AND w.status = ?'; params.push(q.status); }
-    if (q.exam_type_id) { sql += ' AND w.exam_type_id = ?'; params.push(parseInt(q.exam_type_id)); }
-    if (q.target_date) { sql += ' AND w.target_date = ?'; params.push(q.target_date); }
-    sql += ' ORDER BY w.priority DESC, w.created_at ASC';
-    const rows = db.prepare(sql).all(...params);
-    return { success: true, waitlist: rows };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
+  return waitlistService.listWaitlist(query, userId, role);
 }
 
 function listTodayExecutions(date) {

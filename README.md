@@ -183,8 +183,8 @@ WHERE status = 'waiting';
 | --------------------------------- | ------ | ------------------------------------------ |
 | `reschedule_revert_window_minutes`| 30     | 前台审核后可撤回的时间窗口（分钟）          |
 | `waitlist_auto_promote`           | true   | 释放名额时是否自动转正候补                  |
-| `waitlist_default_limit`          | 3      | 每时段默认候补上限                          |
-| `waitlist_max_per_slot`           | 5      | 每时段候补人数上限                          |
+| `waitlist_default_limit`          | 3      | 每时段默认候补上限（slot 自身 waitlist_limit 未设置时使用） |
+| `waitlist_max_per_slot`           | 5      | 每时段候补人数上限，同日同类型候补总上限 = `waitlist_max_per_slot × 当日时段数` |
 | `allow_same_day_reschedule`       | true   | 是否允许改约到同一天                        |
 | `reminder_hours_before`           | 24     | 检查前多少小时发送提醒                      |
 
