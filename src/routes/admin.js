@@ -7,6 +7,14 @@ const {
   listSandboxTasks, getSandboxTaskDetail, approveSandboxTask,
   rejectSandboxTask, generateSandboxReportCSV
 } = require('../utils/sandboxImport');
+const {
+  getReminderAdvanceDays,
+  setReminderAdvanceDays,
+  getFollowupPlan,
+  listFollowupPlans,
+  updateFollowupStatus,
+  generateFollowupCSV
+} = require('../utils/followup');
 
 const router = express.Router();
 
@@ -450,6 +458,77 @@ router.get('/sandbox/tasks/:id/export', (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="sandbox-${result.task_no || req.params.id}.csv"`);
   res.send('\uFEFF' + result.csv);
+});
+
+router.get('/followup/config', (req, res) => {
+  const advanceDays = getReminderAdvanceDays();
+  const config = db.prepare('SELECT * FROM followup_configs WHERE config_key = ?').get('reminder_advance_days');
+  res.json({
+    reminder_advance_days: advanceDays,
+    description: config?.description,
+    updated_by: config?.updated_by,
+    updated_at: config?.updated_at
+  });
+});
+
+router.post('/followup/config', (req, res) => {
+  const { reminder_advance_days } = req.body;
+  
+  if (reminder_advance_days == null) {
+    return res.status(400).json({ error: 'reminder_advance_days 不能为空' });
+  }
+  
+  const days = parseInt(reminder_advance_days);
+  if (isNaN(days) || days < 0 || days > 30) {
+    return res.status(400).json({ error: 'reminder_advance_days 必须是0-30之间的整数' });
+  }
+  
+  setReminderAdvanceDays(days, req.user.id);
+  
+  logAudit(req.user.id, 'update_followup_config', 'followup_config', null, {
+    reminder_advance_days: days
+  }, req.ip);
+  
+  res.json({ success: true, reminder_advance_days: days });
+});
+
+router.get('/followup', (req, res) => {
+  const result = listFollowupPlans(req.query, req.user.id, req.user.role);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/followup/export', (req, res) => {
+  const csv = generateFollowupCSV(req.query);
+  
+  const now = new Date().toISOString().split('T')[0];
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="followup-plans-${now}.csv"`);
+  res.send('\uFEFF' + csv);
+});
+
+router.get('/followup/:id', (req, res) => {
+  const result = getFollowupPlan(parseInt(req.params.id), req.user.id, req.user.role);
+  if (!result.success) {
+    const statusCode = result.code || 404;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result.plan);
+});
+
+router.post('/followup/:id/cancel', (req, res) => {
+  const { cancel_reason } = req.body;
+  if (!cancel_reason) {
+    return res.status(400).json({ success: false, error: '取消原因不能为空' });
+  }
+  const result = updateFollowupStatus(parseInt(req.params.id), 'cancelled', { cancel_reason }, req.user.id, req.user.role, req.ip);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
 });
 
 module.exports = router;

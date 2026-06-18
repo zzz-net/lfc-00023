@@ -3,6 +3,12 @@ const db = require('../db');
 const { logAudit } = require('../utils/audit');
 const { checkCanRegister, getNextQueueNumber, getTodayQueueCount } = require('../utils/queue');
 const { precheckBatch, confirmBatch, revokeBatch, generateBatchCSV } = require('../utils/batchImport');
+const {
+  getFollowupPlan,
+  listFollowupPlans,
+  getTodayReminders,
+  updateFollowupStatus
+} = require('../utils/followup');
 
 const router = express.Router();
 
@@ -489,6 +495,50 @@ router.post('/batches/:id/revoke', (req, res) => {
     return res.status(400).json(result);
   }
   
+  res.json(result);
+});
+
+router.get('/followup/today', (req, res) => {
+  const filters = {};
+  if (req.query.department_id) {
+    filters.department_id = req.query.department_id;
+  }
+  const result = getTodayReminders(req.user.id, req.user.role, filters);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/followup', (req, res) => {
+  const result = listFollowupPlans(req.query, req.user.id, req.user.role);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/followup/:id', (req, res) => {
+  const result = getFollowupPlan(parseInt(req.params.id), req.user.id, req.user.role);
+  if (!result.success) {
+    const statusCode = result.code || 404;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result.plan);
+});
+
+router.post('/followup/:id/contact', (req, res) => {
+  const { status, contact_result } = req.body;
+  
+  if (!['contacted', 'no_answer', 'completed'].includes(status)) {
+    return res.status(400).json({ success: false, error: '状态必须是contacted、no_answer或completed' });
+  }
+  
+  const result = updateFollowupStatus(parseInt(req.params.id), status, { contact_result }, req.user.id, req.user.role, req.ip);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
   res.json(result);
 });
 

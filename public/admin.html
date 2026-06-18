@@ -20,6 +20,7 @@
       <div class="tab" data-tab="slots">号源配置</div>
       <div class="tab" data-tab="closed">停诊时段</div>
       <div class="tab" data-tab="users">用户管理</div>
+      <div class="tab" data-tab="followup">随访管理</div>
       <div class="tab" data-tab="batch">批量导入</div>
       <div class="tab" data-tab="batches">导入批次</div>
       <div class="tab" data-tab="sandbox">导入沙箱</div>
@@ -175,6 +176,80 @@
       </div>
     </div>
 
+    <div id="followup" class="tab-content">
+      <div class="card">
+        <h2>随访配置</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>提醒提前天数</label>
+            <input type="number" id="followupAdvanceDays" min="0" max="30" placeholder="提前几天提醒">
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="loadFollowupConfig()">加载配置</button>
+            <button class="btn btn-success" onclick="saveFollowupConfig()">保存配置</button>
+          </div>
+        </div>
+        <div id="followupConfigInfo" style="margin-top: 10px;"></div>
+      </div>
+
+      <div class="card">
+        <h2>随访计划管理</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>状态筛选</label>
+            <select id="adminFollowupStatus" onchange="loadAdminFollowups()">
+              <option value="">全部</option>
+              <option value="pending">待提醒</option>
+              <option value="contacted">已联系</option>
+              <option value="no_answer">未接通</option>
+              <option value="cancelled">已取消</option>
+              <option value="completed">已完成</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>科室</label>
+            <select id="adminFollowupDept" onchange="loadAdminFollowups()">
+              <option value="">全部</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>日期范围</label>
+            <input type="date" id="adminFollowupStart" onchange="loadAdminFollowups()">
+          </div>
+          <div class="form-group">
+            <label>至</label>
+            <input type="date" id="adminFollowupEnd" onchange="loadAdminFollowups()">
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-success" onclick="exportAdminFollowups()">导出CSV</button>
+          </div>
+        </div>
+        <table id="adminFollowupTable">
+          <thead>
+            <tr>
+              <th>患者姓名</th><th>科室</th><th>主治医生</th><th>复诊日期</th>
+              <th>提醒方式</th><th>状态</th><th>登记护士</th><th>创建时间</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="followupCancelModalAdmin" class="modal">
+      <div class="modal-content">
+        <h3>取消随访计划</h3>
+        <div class="form-group">
+          <label>取消原因 *</label>
+          <textarea id="followupCancelReasonAdmin" rows="3" style="width: 100%;" placeholder="请输入取消原因"></textarea>
+        </div>
+        <div style="text-align: right; margin-top: 20px;">
+          <button class="btn btn-default" onclick="closeFollowupCancelModalAdmin()">取消</button>
+          <button class="btn btn-danger" onclick="confirmCancelFollowupAdmin()">确认取消</button>
+        </div>
+      </div>
+    </div>
+
     <div id="audit" class="tab-content">
       <div class="card">
         <h2>审计日志</h2>
@@ -190,6 +265,11 @@
               <option value="return_queue">退回</option>
               <option value="start_consultation">开始接诊</option>
               <option value="complete_consultation">完成接诊</option>
+              <option value="create_followup_plan">创建随访计划</option>
+              <option value="cancel_followup_plan">取消随访计划</option>
+              <option value="record_followup_contact">登记随访结果</option>
+              <option value="complete_followup_plan">完成随访</option>
+              <option value="update_followup_config">更新随访配置</option>
             </select>
           </div>
           <div class="form-group">
@@ -502,6 +582,8 @@
       window.location.href = 'login.html';
     }
 
+    let currentCancelFollowupIdAdmin = null;
+
     document.querySelectorAll('.tab').forEach(tab => {
       tab.addEventListener('click', () => {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -512,6 +594,7 @@
         if (tab.dataset.tab === 'slots') { loadDeptSelects(); loadSlots(); }
         if (tab.dataset.tab === 'closed') { loadDeptSelects(); loadClosedPeriods(); }
         if (tab.dataset.tab === 'users') { loadDeptSelects(); loadUsers(); }
+        if (tab.dataset.tab === 'followup') { loadFollowupConfig(); loadAdminFollowupDepts(); loadAdminFollowups(); }
         if (tab.dataset.tab === 'audit') loadAuditLogs();
         if (tab.dataset.tab === 'batches') { loadBatchDeptsAdmin(); loadBatchesAdmin(); }
       });
@@ -1032,6 +1115,135 @@
       } catch (e) {
         showAlert(e.message, 'error');
       }
+    }
+
+    async function loadFollowupConfig() {
+      try {
+        const config = await api.admin.getFollowupConfig();
+        document.getElementById('followupAdvanceDays').value = config.reminder_advance_days;
+        let info = `当前配置：提前${config.reminder_advance_days}天提醒`;
+        if (config.updated_at) {
+          info += ` | 最后更新：${config.updated_at}`;
+        }
+        document.getElementById('followupConfigInfo').innerHTML = `<p style="color: #666; font-size: 14px;">${info}</p>`;
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    async function saveFollowupConfig() {
+      const days = parseInt(document.getElementById('followupAdvanceDays').value);
+      if (isNaN(days) || days < 0 || days > 30) {
+        return showAlert('提醒提前天数必须是0-30之间的整数', 'error');
+      }
+      if (!confirm(`确认将提醒提前天数设置为${days}天？`)) return;
+
+      try {
+        await api.admin.updateFollowupConfig(days);
+        showAlert('配置已保存');
+        loadFollowupConfig();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    async function loadAdminFollowupDepts() {
+      const depts = await api.getDepartments();
+      const sel = document.getElementById('adminFollowupDept');
+      sel.innerHTML = '<option value="">全部</option>' + depts.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+    }
+
+    async function loadAdminFollowups() {
+      const params = {};
+      const status = document.getElementById('adminFollowupStatus').value;
+      const deptId = document.getElementById('adminFollowupDept').value;
+      const startDate = document.getElementById('adminFollowupStart').value;
+      const endDate = document.getElementById('adminFollowupEnd').value;
+      
+      if (status) params.status = status;
+      if (deptId) params.department_id = deptId;
+      if (startDate) params.start_date = startDate;
+      if (endDate) params.end_date = endDate;
+
+      const result = await api.admin.getFollowups(params);
+      const statusMap = {
+        pending: '待提醒',
+        contacted: '已联系',
+        no_answer: '未接通',
+        cancelled: '已取消',
+        completed: '已完成'
+      };
+      const statusClass = {
+        pending: 'status-waiting',
+        contacted: 'status-consulting',
+        no_answer: 'status-called',
+        cancelled: 'status-returned',
+        completed: 'status-completed'
+      };
+
+      if (result.plans.length === 0) {
+        document.querySelector('#adminFollowupTable tbody').innerHTML = '<tr><td colspan="9" style="text-align: center; color: #999;">暂无随访计划</td></tr>';
+        return;
+      }
+
+      document.querySelector('#adminFollowupTable tbody').innerHTML = result.plans.map(f => `
+        <tr>
+          <td>${f.patient_name}</td>
+          <td>${f.department_name}</td>
+          <td>${f.doctor_name}</td>
+          <td>${f.followup_date}</td>
+          <td>${f.reminder_method}</td>
+          <td><span class="status-badge ${statusClass[f.status]}">${statusMap[f.status]}</span></td>
+          <td>${f.contacted_by_name || '-'}</td>
+          <td>${f.created_at ? f.created_at.slice(0, 16) : '-'}</td>
+          <td>
+            ${f.status === 'pending' ? 
+              `<button class="btn btn-sm btn-danger" onclick="openFollowupCancelModalAdmin(${f.id})">取消</button>` : 
+              '<span style="color: #999;">-</span>'}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function openFollowupCancelModalAdmin(id) {
+      currentCancelFollowupIdAdmin = id;
+      document.getElementById('followupCancelReasonAdmin').value = '';
+      document.getElementById('followupCancelModalAdmin').classList.add('active');
+    }
+
+    function closeFollowupCancelModalAdmin() {
+      currentCancelFollowupIdAdmin = null;
+      document.getElementById('followupCancelModalAdmin').classList.remove('active');
+    }
+
+    async function confirmCancelFollowupAdmin() {
+      const reason = document.getElementById('followupCancelReasonAdmin').value.trim();
+      if (!reason) return showAlert('请输入取消原因', 'error');
+      if (!confirm('确认取消该随访计划？')) return;
+
+      try {
+        await api.admin.cancelFollowup(currentCancelFollowupIdAdmin, reason);
+        showAlert('随访计划已取消');
+        closeFollowupCancelModalAdmin();
+        loadAdminFollowups();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    function exportAdminFollowups() {
+      const params = {};
+      const status = document.getElementById('adminFollowupStatus').value;
+      const deptId = document.getElementById('adminFollowupDept').value;
+      const startDate = document.getElementById('adminFollowupStart').value;
+      const endDate = document.getElementById('adminFollowupEnd').value;
+      
+      if (status) params.status = status;
+      if (deptId) params.department_id = deptId;
+      if (startDate) params.start_date = startDate;
+      if (endDate) params.end_date = endDate;
+
+      window.open(api.admin.exportFollowupCSV(params), '_blank');
     }
 
     let currentSandboxTaskId = null;

@@ -34,6 +34,7 @@
     <div class="tabs">
       <div class="tab active" data-tab="register">患者登记</div>
       <div class="tab" data-tab="queue">排队管理</div>
+      <div class="tab" data-tab="followup">随访提醒</div>
       <div class="tab" data-tab="batch">批量导入</div>
       <div class="tab" data-tab="batches">导入批次</div>
     </div>
@@ -104,6 +105,90 @@
           </thead>
           <tbody></tbody>
         </table>
+      </div>
+    </div>
+
+    <div id="followup" class="tab-content">
+      <div class="card">
+        <h2>今日待提醒随访</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>筛选科室</label>
+            <select id="followupDept" onchange="loadTodayFollowups()">
+              <option value="">全部科室</option>
+            </select>
+          </div>
+          <div class="form-group" style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="loadTodayFollowups()">刷新</button>
+          </div>
+        </div>
+        <div id="followupStats" style="margin-bottom: 15px;"></div>
+        <table id="followupTable">
+          <thead>
+            <tr>
+              <th>患者姓名</th><th>身份证号</th><th>联系电话</th><th>科室</th>
+              <th>主治医生</th><th>复诊日期</th><th>提醒方式</th><th>关联诊断</th><th>状态</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>全部随访计划</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>状态筛选</label>
+            <select id="allFollowupStatus" onchange="loadAllFollowups()">
+              <option value="">全部</option>
+              <option value="pending">待提醒</option>
+              <option value="contacted">已联系</option>
+              <option value="no_answer">未接通</option>
+              <option value="cancelled">已取消</option>
+              <option value="completed">已完成</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>日期范围</label>
+            <input type="date" id="allFollowupStart" onchange="loadAllFollowups()">
+          </div>
+          <div class="form-group">
+            <label>至</label>
+            <input type="date" id="allFollowupEnd" onchange="loadAllFollowups()">
+          </div>
+        </div>
+        <table id="allFollowupTable">
+          <thead>
+            <tr>
+              <th>患者姓名</th><th>科室</th><th>主治医生</th><th>复诊日期</th>
+              <th>提醒方式</th><th>状态</th><th>登记护士</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="followupContactModal" class="modal">
+      <div class="modal-content">
+        <h3>登记随访结果</h3>
+        <div id="followupContactInfo"></div>
+        <div class="form-group">
+          <label>联系结果 *</label>
+          <select id="followupContactStatus">
+            <option value="contacted">已联系</option>
+            <option value="no_answer">未接通</option>
+            <option value="completed">已完成复诊</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>联系备注</label>
+          <textarea id="followupContactResult" rows="3" style="width: 100%;" placeholder="请填写联系备注（如：患者已确认按时复诊、电话无人接听等）"></textarea>
+        </div>
+        <div style="text-align: right; margin-top: 20px;">
+          <button class="btn btn-default" onclick="closeFollowupContactModal()">取消</button>
+          <button class="btn btn-success" onclick="confirmFollowupContact()">确认登记</button>
+        </div>
       </div>
     </div>
 
@@ -241,6 +326,7 @@
     let returnQueueId = null;
     let currentBatchId = null;
     let currentPrecheckBatchId = null;
+    let currentFollowupId = null;
     if (!currentUser || currentUser.role !== 'nurse') window.location.href = 'login.html';
     document.getElementById('userInfo').textContent = `${currentUser.name} (护士)`;
     document.getElementById('queueDate').value = new Date().toISOString().split('T')[0];
@@ -265,8 +351,151 @@
         document.getElementById(tab.dataset.tab).classList.add('active');
         if (tab.dataset.tab === 'queue') loadQueue();
         if (tab.dataset.tab === 'batches') { loadBatchDepts(); loadBatches(); }
+        if (tab.dataset.tab === 'followup') { loadFollowupDepts(); loadTodayFollowups(); loadAllFollowups(); }
       });
     });
+
+    async function loadFollowupDepts() {
+      const depts = await api.getDepartments();
+      const sel = document.getElementById('followupDept');
+      sel.innerHTML = '<option value="">全部科室</option>' + depts.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+    }
+
+    async function loadTodayFollowups() {
+      const deptId = document.getElementById('followupDept').value;
+      const result = await api.nurse.getTodayFollowups(deptId);
+      const statusMap = {
+        pending: '待提醒',
+        contacted: '已联系',
+        no_answer: '未接通',
+        cancelled: '已取消',
+        completed: '已完成'
+      };
+      const statusClass = {
+        pending: 'status-waiting',
+        contacted: 'status-consulting',
+        no_answer: 'status-called',
+        cancelled: 'status-returned',
+        completed: 'status-completed'
+      };
+
+      document.getElementById('followupStats').innerHTML = `
+        <div class="stats-grid" style="margin-bottom: 10px;">
+          <div class="stat-card blue"><div class="number">${result.plans.length}</div><div class="label">今日待提醒（提前${result.reminder_advance_days}天）</div></div>
+        </div>
+      `;
+
+      if (result.plans.length === 0) {
+        document.querySelector('#followupTable tbody').innerHTML = '<tr><td colspan="10" style="text-align: center; color: #999;">今日暂无待提醒随访</td></tr>';
+        return;
+      }
+
+      document.querySelector('#followupTable tbody').innerHTML = result.plans.map(f => `
+        <tr>
+          <td>${f.patient_name}</td>
+          <td>${f.id_card}</td>
+          <td>${f.phone || '-'}</td>
+          <td>${f.department_name}</td>
+          <td>${f.doctor_name}</td>
+          <td>${f.followup_date}</td>
+          <td>${f.reminder_method}</td>
+          <td>${f.related_diagnosis || '-'}</td>
+          <td><span class="status-badge ${statusClass[f.status]}">${statusMap[f.status]}</span></td>
+          <td>
+            ${f.status === 'pending' ? 
+              `<button class="btn btn-sm btn-primary" onclick="openFollowupContactModal(${f.id}, '${escapeJs(f.patient_name)}', '${f.followup_date}', '${f.reminder_method}')">登记</button>` : 
+              '<span style="color: #999;">-</span>'}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function loadAllFollowups() {
+      const params = {};
+      const status = document.getElementById('allFollowupStatus').value;
+      const startDate = document.getElementById('allFollowupStart').value;
+      const endDate = document.getElementById('allFollowupEnd').value;
+      
+      if (status) params.status = status;
+      if (startDate) params.start_date = startDate;
+      if (endDate) params.end_date = endDate;
+
+      const result = await api.nurse.getFollowups(params);
+      const statusMap = {
+        pending: '待提醒',
+        contacted: '已联系',
+        no_answer: '未接通',
+        cancelled: '已取消',
+        completed: '已完成'
+      };
+      const statusClass = {
+        pending: 'status-waiting',
+        contacted: 'status-consulting',
+        no_answer: 'status-called',
+        cancelled: 'status-returned',
+        completed: 'status-completed'
+      };
+
+      if (result.plans.length === 0) {
+        document.querySelector('#allFollowupTable tbody').innerHTML = '<tr><td colspan="8" style="text-align: center; color: #999;">暂无随访计划</td></tr>';
+        return;
+      }
+
+      document.querySelector('#allFollowupTable tbody').innerHTML = result.plans.map(f => `
+        <tr>
+          <td>${f.patient_name}</td>
+          <td>${f.department_name}</td>
+          <td>${f.doctor_name}</td>
+          <td>${f.followup_date}</td>
+          <td>${f.reminder_method}</td>
+          <td><span class="status-badge ${statusClass[f.status]}">${statusMap[f.status]}</span></td>
+          <td>${f.contacted_by_name || '-'}</td>
+          <td>
+            ${f.status === 'pending' ? 
+              `<button class="btn btn-sm btn-primary" onclick="openFollowupContactModal(${f.id}, '${escapeJs(f.patient_name)}', '${f.followup_date}', '${f.reminder_method}')">登记</button>` : 
+              '<span style="color: #999;">-</span>'}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function openFollowupContactModal(id, patientName, followupDate, reminderMethod) {
+      currentFollowupId = id;
+      document.getElementById('followupContactInfo').innerHTML = `
+        <p style="margin-bottom: 15px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
+          <strong>${patientName}</strong> | 复诊日期：${followupDate} | 提醒方式：${reminderMethod}
+        </p>
+      `;
+      document.getElementById('followupContactStatus').value = 'contacted';
+      document.getElementById('followupContactResult').value = '';
+      document.getElementById('followupContactModal').classList.add('active');
+    }
+
+    function closeFollowupContactModal() {
+      currentFollowupId = null;
+      document.getElementById('followupContactModal').classList.remove('active');
+    }
+
+    async function confirmFollowupContact() {
+      const status = document.getElementById('followupContactStatus').value;
+      const contactResult = document.getElementById('followupContactResult').value.trim();
+      
+      if (!confirm('确认登记该随访结果？')) return;
+
+      try {
+        await api.nurse.recordFollowupContact(currentFollowupId, status, contactResult);
+        showAlert('随访结果已登记');
+        closeFollowupContactModal();
+        loadTodayFollowups();
+        loadAllFollowups();
+      } catch (e) {
+        showAlert(e.message, 'error');
+      }
+    }
+
+    function escapeJs(str) {
+      return (str || '').toString().replace(/'/g, "\\'").replace(/"/g, '\\"');
+    }
 
     async function loadDepartments() {
       const depts = await api.getDepartments();

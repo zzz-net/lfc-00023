@@ -1,6 +1,12 @@
 const express = require('express');
 const db = require('../db');
 const { logAudit } = require('../utils/audit');
+const {
+  createFollowupPlan,
+  getFollowupPlan,
+  listFollowupPlans,
+  updateFollowupStatus
+} = require('../utils/followup');
 
 const router = express.Router();
 
@@ -175,6 +181,44 @@ router.get('/history', (req, res) => {
   `).all(req.user.id, departmentId, queryDate);
   
   res.json(records);
+});
+
+router.post('/followup', (req, res) => {
+  const result = createFollowupPlan(req.body, req.user.id, req.ip);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/followup', (req, res) => {
+  const result = listFollowupPlans(req.query, req.user.id, req.user.role);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json(result);
+});
+
+router.get('/followup/:id', (req, res) => {
+  const result = getFollowupPlan(parseInt(req.params.id), req.user.id, req.user.role);
+  if (!result.success) {
+    const statusCode = result.code || 404;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result.plan);
+});
+
+router.post('/followup/:id/cancel', (req, res) => {
+  const { cancel_reason } = req.body;
+  if (!cancel_reason) {
+    return res.status(400).json({ success: false, error: '取消原因不能为空' });
+  }
+  const result = updateFollowupStatus(parseInt(req.params.id), 'cancelled', { cancel_reason }, req.user.id, req.user.role, req.ip);
+  if (!result.success) {
+    const statusCode = result.code || 400;
+    return res.status(statusCode).json(result);
+  }
+  res.json(result);
 });
 
 module.exports = router;

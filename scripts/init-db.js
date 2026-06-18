@@ -276,9 +276,82 @@ CREATE INDEX IF NOT EXISTS idx_sandbox_record_task ON sandbox_records(task_id);
 CREATE INDEX IF NOT EXISTS idx_sandbox_record_status ON sandbox_records(sandbox_status);
 CREATE INDEX IF NOT EXISTS idx_sandbox_confirmation_task ON sandbox_confirmations(task_id);
 CREATE INDEX IF NOT EXISTS idx_sandbox_mapping_task ON sandbox_field_mappings(task_id);
+
+CREATE TABLE IF NOT EXISTS followup_configs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  config_key TEXT UNIQUE NOT NULL,
+  config_value TEXT NOT NULL,
+  description TEXT,
+  updated_by INTEGER,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (updated_by) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS followup_plans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  patient_id INTEGER NOT NULL,
+  doctor_id INTEGER NOT NULL,
+  department_id INTEGER NOT NULL,
+  queue_record_id INTEGER,
+  consultation_record_id INTEGER,
+  followup_date TEXT NOT NULL,
+  reminder_method TEXT NOT NULL CHECK(reminder_method IN ('电话', '短信', '微信', '无')),
+  notes TEXT,
+  related_diagnosis TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN (
+    'pending', 'contacted', 'no_answer', 'cancelled', 'completed'
+  )),
+  contact_result TEXT,
+  contacted_by INTEGER,
+  contacted_at DATETIME,
+  cancel_reason TEXT,
+  cancelled_by INTEGER,
+  cancelled_at DATETIME,
+  created_by INTEGER NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (patient_id) REFERENCES patients(id),
+  FOREIGN KEY (doctor_id) REFERENCES users(id),
+  FOREIGN KEY (department_id) REFERENCES departments(id),
+  FOREIGN KEY (queue_record_id) REFERENCES queue_records(id),
+  FOREIGN KEY (consultation_record_id) REFERENCES consultation_records(id),
+  FOREIGN KEY (contacted_by) REFERENCES users(id),
+  FOREIGN KEY (cancelled_by) REFERENCES users(id),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_followup_patient ON followup_plans(patient_id);
+CREATE INDEX IF NOT EXISTS idx_followup_doctor ON followup_plans(doctor_id);
+CREATE INDEX IF NOT EXISTS idx_followup_department ON followup_plans(department_id);
+CREATE INDEX IF NOT EXISTS idx_followup_date ON followup_plans(followup_date);
+CREATE INDEX IF NOT EXISTS idx_followup_status ON followup_plans(status);
+CREATE INDEX IF NOT EXISTS idx_followup_created ON followup_plans(created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_followup_unique_active ON followup_plans(patient_id, department_id, followup_date) WHERE status != 'cancelled';
 `;
 
 db.exec(initSql);
+
+const followupConfigStmt = db.prepare("INSERT OR IGNORE INTO followup_configs (config_key, config_value, description) VALUES (?, ?, ?)");
+followupConfigStmt.run('reminder_advance_days', '1', '随访提醒提前天数（默认1天）');
+
+try {
+  const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='followup_plans'").get();
+  if (tableInfo && tableInfo.sql && tableInfo.sql.includes('UNIQUE(patient_id, department_id, followup_date)')) {
+    console.log('检测到旧版随访表结构，开始迁移...');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS followup_plans_backup AS SELECT * FROM followup_plans;
+      DROP TABLE followup_plans;
+    `);
+    db.exec(initSql);
+    db.exec(`
+      INSERT INTO followup_plans SELECT * FROM followup_plans_backup;
+      DROP TABLE followup_plans_backup;
+    `);
+    console.log('随访表迁移完成');
+  }
+} catch (e) {
+  console.log('随访表迁移检查跳过:', e.message);
+}
 
 const pragmaInfo = db.prepare("PRAGMA table_info(queue_records)").all();
 const existingColumns = pragmaInfo.map(c => c.name);

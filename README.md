@@ -450,6 +450,8 @@ npm run seed   # 插入样例数据
 npm run reset  # 重置数据库（删除+重建+插入样例）
 node scripts/test-regression.js     # 回归测试：过号幂等 + 审计筛选
 node scripts/test-after-restart.js  # 重启后一致性复测
+node scripts/test-followup.js       # 随访模块完整测试
+node scripts/test-followup-restart.js  # 随访模块重启后一致性测试
 ```
 
 ## 项目结构
@@ -460,32 +462,35 @@ node scripts/test-after-restart.js  # 重启后一致性复测
 ├── package.json
 ├── .env                   # 环境变量
 ├── scripts/
-│   ├── init-db.js         # 数据库初始化
+│   ├── init-db.js         # 数据库初始化（含随访表）
 │   ├── seed-data.js       # 样例数据
 │   ├── reset-db.js        # 数据库重置
 │   ├── test-regression.js # 回归测试（过号幂等 + 审计筛选）
-│   └── test-after-restart.js # 重启后一致性复测
+│   ├── test-after-restart.js # 重启后一致性复测
+│   ├── test-followup.js   # 随访模块完整测试
+│   └── test-followup-restart.js # 随访模块重启后一致性测试
 ├── src/
 │   ├── db/index.js        # 数据库连接
 │   ├── middleware/auth.js # 认证中间件
 │   ├── utils/
 │   │   ├── audit.js       # 审计日志
-│   │   └── queue.js       # 队列工具函数
+│   │   ├── queue.js       # 队列工具函数
+│   │   └── followup.js    # 随访模块核心工具函数
 │   └── routes/
 │       ├── auth.js        # 认证接口
-│       ├── admin.js       # 管理员接口
-│       ├── nurse.js       # 护士接口
-│       ├── doctor.js      # 医生接口
+│       ├── admin.js       # 管理员接口（含随访管理）
+│       ├── nurse.js       # 护士接口（含随访提醒）
+│       ├── doctor.js      # 医生接口（含随访计划）
 │       └── public.js      # 公共接口
 └── public/                # 前端页面
     ├── index.html
     ├── login.html
-    ├── admin.html
-    ├── nurse.html
-    ├── doctor.html
+    ├── admin.html         # 含随访管理标签页
+    ├── nurse.html         # 含随访提醒标签页
+    ├── doctor.html        # 含随访计划管理标签页
     ├── display.html
     ├── css/style.css
-    └── js/api.js
+    └── js/api.js          # 含随访API包装
 ```
 
 ## 场景十六：导入沙箱模块 - 反复演练不碰正式数据
