@@ -22,6 +22,7 @@
       <div class="tab" data-tab="users">用户管理</div>
       <div class="tab" data-tab="batch">批量导入</div>
       <div class="tab" data-tab="batches">导入批次</div>
+      <div class="tab" data-tab="sandbox">导入沙箱</div>
       <div class="tab" data-tab="audit">审计日志</div>
       <div class="tab" data-tab="reports">日报导出</div>
     </div>
@@ -323,6 +324,137 @@
           <tbody></tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <div id="sandbox" class="tab-content">
+    <div class="card">
+      <h2>创建沙箱任务</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label>任务名称</label>
+          <input type="text" id="sandboxTaskName" placeholder="请输入任务名称">
+        </div>
+        <div class="form-group">
+          <label>模板版本</label>
+          <select id="sandboxTemplate">
+            <option value="v1">v1 - 标准模板</option>
+            <option value="v2">v2 - 扩展模板</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>目标数据集</label>
+          <select id="sandboxDataset">
+            <option value="queue_records">queue_records - 排队记录</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>生效范围</label>
+          <select id="sandboxScopeType">
+            <option value="department">按科室</option>
+            <option value="all">全部</option>
+            <option value="custom">自定义</option>
+          </select>
+        </div>
+        <div class="form-group" style="align-self: flex-end;">
+          <button class="btn btn-primary" onclick="createSandboxTask()">创建任务</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="sandboxEditor" class="card" style="display: none;">
+      <h3 id="sandboxEditorTitle">编辑沙箱任务</h3>
+      <div class="form-row">
+        <div class="form-group" style="flex: 1;">
+          <label>CSV模板说明</label>
+          <div style="background: #f5f5f5; padding: 10px; border-radius: 4px; font-size: 12px;">
+            必填列：id_card, name, department, queue_date, type<br>
+            可选列：phone, gender, age<br>
+            type可选值：预约/appointment、现场/walkin
+          </div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>上传CSV文件</label>
+          <input type="file" id="sandboxCsvFile" accept=".csv" onchange="handleSandboxFileSelect(event)" style="padding: 8px;">
+        </div>
+        <div class="form-group" style="align-self: flex-end;">
+          <button class="btn btn-default" onclick="downloadSandboxTemplate()">下载模板</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="flex: 1;">
+          <label>或直接粘贴CSV内容</label>
+          <textarea id="sandboxCsvText" rows="6" style="width: 100%; font-family: monospace;" placeholder="id_card,name,department,queue_date,type"></textarea>
+        </div>
+      </div>
+      <div class="form-row" style="justify-content: flex-end;">
+        <button class="btn btn-default" onclick="closeSandboxEditor()">关闭</button>
+        <button class="btn btn-warning" onclick="voidCurrentSandbox()">整批作废</button>
+        <button class="btn btn-default" onclick="reimportCurrentSandbox()">重新导入</button>
+        <button class="btn btn-primary" onclick="precheckCurrentSandbox()">执行预检</button>
+        <button class="btn btn-info" onclick="practiceCurrentSandbox()">演练确认</button>
+        <button class="btn btn-success" onclick="submitCurrentSandbox()">最终提交</button>
+        <button class="btn btn-success" onclick="exportCurrentSandbox()">导出报告</button>
+      </div>
+    </div>
+
+    <div id="sandboxResult" class="card" style="display: none;">
+      <h3>预检/演练结果</h3>
+      <div id="sandboxResultContent"></div>
+    </div>
+
+    <div class="card">
+      <h2>沙箱任务列表</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label>状态</label>
+          <select id="sandboxStatusFilter">
+            <option value="">全部</option>
+            <option value="draft">草稿</option>
+            <option value="prechecked">预检完成</option>
+            <option value="practiced">演练完成</option>
+            <option value="approved">审批通过</option>
+            <option value="rejected">审批拒绝</option>
+            <option value="submitted">已提交</option>
+            <option value="voided">已作废</option>
+          </select>
+        </div>
+        <div class="form-group" style="align-self: flex-end;">
+          <button class="btn btn-primary" onclick="loadSandboxTasks()">查询</button>
+        </div>
+      </div>
+      <table id="sandboxTable">
+        <thead>
+          <tr>
+            <th>任务编号</th><th>任务名称</th><th>模板</th><th>创建人</th><th>创建时间</th>
+            <th>总数</th><th>新增</th><th>覆盖</th><th>跳过</th><th>失败</th>
+            <th>状态</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div id="sandboxDetail" class="card" style="display: none;">
+      <div class="form-row" style="justify-content: space-between;">
+        <h3 id="sandboxDetailTitle">沙箱任务详情</h3>
+        <div>
+          <button class="btn btn-success" onclick="exportCurrentSandbox()">导出报告</button>
+          <button class="btn btn-default" onclick="closeSandboxDetail()">关闭</button>
+        </div>
+      </div>
+      <div id="sandboxConfirmations" style="margin-bottom: 20px;"></div>
+      <table id="sandboxDetailTable">
+        <thead>
+          <tr>
+            <th>行号</th><th>身份证号</th><th>姓名</th><th>科室</th><th>日期</th><th>类型</th>
+            <th>沙箱状态</th><th>动作</th><th>冲突说明</th><th>演练号</th><th>撤销</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
   </div>
 
@@ -901,6 +1033,242 @@
         showAlert(e.message, 'error');
       }
     }
+
+    let currentSandboxTaskId = null;
+
+    function handleSandboxFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => { document.getElementById('sandboxCsvText').value = e.target.result; };
+      reader.readAsText(file, 'UTF-8');
+    }
+
+    function downloadSandboxTemplate() {
+      const template = 'id_card,name,department,queue_date,type,phone,gender,age\n110101199001011234,张三,内科,2026-06-18,预约,13800138000,男,30';
+      const blob = new Blob(['\uFEFF' + template], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'sandbox_template.csv';
+      link.click();
+    }
+
+    async function createSandboxTask() {
+      const task_name = document.getElementById('sandboxTaskName').value.trim();
+      if (!task_name) return showAlert('请输入任务名称', 'error');
+      const template_version = document.getElementById('sandboxTemplate').value;
+      const target_dataset = document.getElementById('sandboxDataset').value;
+      const scope_type = document.getElementById('sandboxScopeType').value;
+      try {
+        const r = await api.sandbox.createTask({ task_name, template_version, target_dataset, scope_type });
+        currentSandboxTaskId = r.task_id;
+        document.getElementById('sandboxEditorTitle').textContent = '编辑沙箱任务 - ' + task_name + ' (' + r.task_no + ')';
+        document.getElementById('sandboxEditor').style.display = 'block';
+        document.getElementById('sandboxTaskName').value = '';
+        showAlert('沙箱任务创建成功');
+        loadSandboxTasks();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function closeSandboxEditor() {
+      currentSandboxTaskId = null;
+      document.getElementById('sandboxEditor').style.display = 'none';
+      document.getElementById('sandboxResult').style.display = 'none';
+      document.getElementById('sandboxCsvText').value = '';
+    }
+
+    async function precheckCurrentSandbox() {
+      if (!currentSandboxTaskId) return showAlert('请先创建或选择任务', 'error');
+      const csvText = document.getElementById('sandboxCsvText').value.trim();
+      if (!csvText) return showAlert('请上传或粘贴CSV内容', 'error');
+      try {
+        const r = await api.sandbox.precheckTask(currentSandboxTaskId, csvText);
+        showAlert(`预检完成: 总计${r.total_count}, 新增${r.new_count}, 覆盖${r.overwrite_count}, 跳过${r.skip_count}, 失败${r.fail_count}`);
+        renderSandboxResult(r);
+        loadSandboxTasks();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function practiceCurrentSandbox() {
+      if (!currentSandboxTaskId) return showAlert('请先创建或选择任务', 'error');
+      try {
+        const r = await api.sandbox.practiceTask(currentSandboxTaskId);
+        showAlert(`演练完成: 成功${r.success_count}, 覆盖${r.overwrite_count}, 失败${r.fail_count}`);
+        loadSandboxTasks();
+        loadSandboxTaskDetail(currentSandboxTaskId);
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function submitCurrentSandbox() {
+      if (!currentSandboxTaskId) return showAlert('请先创建或选择任务', 'error');
+      if (!confirm('确认提交到正式数据？提交后将生成正式批次记录，无法撤销。')) return;
+      try {
+        const r = await api.sandbox.submitTask(currentSandboxTaskId);
+        let msg = `提交完成: 成功${r.success_count}, 失败${r.fail_count}`;
+        if (r.retry_records && r.retry_records.length > 0) msg += `，${r.retry_records.length}条失败可重试`;
+        showAlert(msg);
+        loadSandboxTasks();
+        loadSandboxTaskDetail(currentSandboxTaskId);
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function voidCurrentSandbox() {
+      if (!currentSandboxTaskId) return showAlert('请先创建或选择任务', 'error');
+      const reason = prompt('请输入作废原因');
+      if (!reason) return;
+      if (!confirm('确认整批作废？此操作不可撤销。')) return;
+      try {
+        const r = await api.sandbox.voidTask(currentSandboxTaskId, reason);
+        showAlert(r.message);
+        loadSandboxTasks();
+        closeSandboxEditor();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function reimportCurrentSandbox() {
+      if (!currentSandboxTaskId) return showAlert('请先创建或选择任务', 'error');
+      if (!confirm('确认重新导入？将重置为草稿状态，所有预检和演练结果将清空。')) return;
+      try {
+        const r = await api.sandbox.reimportTask(currentSandboxTaskId);
+        showAlert(r.message);
+        loadSandboxTasks();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    function exportCurrentSandbox() {
+      const tid = currentSandboxTaskId;
+      if (!tid) return showAlert('请先选择任务', 'error');
+      window.open(api.sandbox.exportTaskCSV(tid), '_blank');
+    }
+
+    function renderSandboxResult(r) {
+      let html = `<div class="stats-grid"><div class="stat-card"><div class="number">${r.total_count || 0}</div><div class="label">总计</div></div>
+        <div class="stat-card green"><div class="number">${r.new_count || 0}</div><div class="label">新增</div></div>
+        <div class="stat-card"><div class="number">${r.overwrite_count || 0}</div><div class="label">覆盖</div></div>
+        <div class="stat-card"><div class="number">${r.skip_count || 0}</div><div class="label">跳过</div></div>
+        <div class="stat-card red"><div class="number">${r.fail_count || 0}</div><div class="label">失败</div></div></div>`;
+      if (r.details && r.details.validated && r.details.validated.length > 0) {
+        html += '<h4>校验通过</h4><table style="width:100%"><thead><tr><th>行</th><th>身份证</th><th>姓名</th><th>科室</th><th>动作</th></tr></thead><tbody>';
+        r.details.validated.forEach(x => { html += `<tr><td>${x.row}</td><td>${x.id_card}</td><td>${x.name}</td><td>${x.department}</td><td>${x.action_type}</td></tr>`; });
+        html += '</tbody></table>';
+      }
+      if (r.details && r.details.conflict && r.details.conflict.length > 0) {
+        html += '<h4 style="color:#f0ad4e;">冲突记录</h4><table style="width:100%"><thead><tr><th>行</th><th>身份证</th><th>姓名</th><th>冲突说明</th><th>动作</th></tr></thead><tbody>';
+        r.details.conflict.forEach(x => { html += `<tr><td>${x.row}</td><td>${x.id_card}</td><td>${x.name}</td><td>${x.conflict_detail}</td><td>${x.action_type}</td></tr>`; });
+        html += '</tbody></table>';
+      }
+      if (r.details && r.details.failed && r.details.failed.length > 0) {
+        html += '<h4 style="color:#d9534f;">失败记录</h4><table style="width:100%"><thead><tr><th>行</th><th>身份证</th><th>姓名</th><th>错误</th></tr></thead><tbody>';
+        r.details.failed.forEach(x => { html += `<tr><td>${x.row}</td><td>${x.id_card}</td><td>${x.name}</td><td class="text-red">${x.errors ? x.errors.map(e => e.message).join('; ') : ''}</td></tr>`; });
+        html += '</tbody></table>';
+      }
+      document.getElementById('sandboxResultContent').innerHTML = html;
+      document.getElementById('sandboxResult').style.display = 'block';
+    }
+
+    async function loadSandboxTasks() {
+      const status = document.getElementById('sandboxStatusFilter').value;
+      const data = await api.sandbox.getTasks({ status, pageSize: 100 });
+      const statusMap = { draft: '草稿', prechecked: '预检完成', practiced: '演练完成', pending_approval: '待审批', approved: '审批通过', rejected: '审批拒绝', submitted: '已提交', voided: '已作废' };
+      const statusClass = { draft: 'status-waiting', prechecked: 'status-called', practiced: 'status-consulting', approved: 'status-consulting', submitted: 'status-completed', voided: 'status-returned', rejected: 'status-missed' };
+      document.querySelector('#sandboxTable tbody').innerHTML = data.tasks.map(t => `
+        <tr>
+          <td><a href="#" onclick="loadSandboxTaskDetail(${t.id}); return false;">${t.task_no}</a></td>
+          <td>${escapeHtml(t.task_name)}</td>
+          <td>${t.template_version}</td>
+          <td>${t.created_by_name || '-'}</td>
+          <td>${t.created_at}</td>
+          <td>${t.total_count}</td><td>${t.new_count}</td><td>${t.overwrite_count}</td><td>${t.skip_count}</td><td>${t.fail_count}</td>
+          <td><span class="status-badge ${statusClass[t.status] || ''}">${statusMap[t.status] || t.status}</span></td>
+          <td>
+            ${t.status !== 'submitted' && t.status !== 'voided' ? `<button class="btn btn-sm btn-primary" onclick="openSandboxEditor(${t.id}, '${escapeHtml(t.task_name)}', '${t.task_no}')">编辑</button> ` : ''}
+            ${t.status === 'practiced' ? `<button class="btn btn-sm btn-success" onclick="approveSandbox(${t.id})">审批通过</button> ` : ''}
+            ${t.status === 'practiced' ? `<button class="btn btn-sm btn-danger" onclick="rejectSandbox(${t.id})">拒绝</button>` : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function openSandboxEditor(id, name, no) {
+      currentSandboxTaskId = id;
+      document.getElementById('sandboxEditorTitle').textContent = '编辑沙箱任务 - ' + name + ' (' + no + ')';
+      document.getElementById('sandboxEditor').style.display = 'block';
+      loadSandboxTaskDetail(id);
+    }
+
+    async function loadSandboxTaskDetail(id) {
+      const task = await api.sandbox.getTaskDetail(id);
+      document.getElementById('sandboxDetailTitle').textContent = '任务详情 - ' + task.task_name + ' (' + task.task_no + ')';
+      currentSandboxTaskId = id;
+      const statusMap = { pending: '待处理', validated: '校验通过', conflict: '冲突', skipped: '跳过', reverted: '已撤销', failed: '失败', practice_success: '演练成功', practice_overwrite: '演练覆盖', submitted: '已提交', voided: '已作废' };
+      const actionMap = { new: '新增', overwrite: '覆盖', skip: '跳过' };
+      const typeMap = { appointment: '预约', walkin: '现场' };
+      document.querySelector('#sandboxDetailTable tbody').innerHTML = task.records.map(r => `
+        <tr>
+          <td>${r.row_index}</td><td>${r.id_card}</td><td>${r.name}</td>
+          <td>${r.department_name || '-'}</td><td>${r.queue_date}</td>
+          <td>${typeMap[r.type] || r.type}</td>
+          <td><span class="status-badge">${statusMap[r.sandbox_status] || r.sandbox_status}</span></td>
+          <td>${actionMap[r.action_type] || '-'}</td>
+          <td class="text-red">${r.conflict_detail || '-'}</td>
+          <td>${r.practice_queue_number || '-'}</td>
+          <td>${r.is_reverted ? '是' : '否'}</td>
+          <td>${(!r.is_reverted && r.sandbox_status !== 'submitted' && r.sandbox_status !== 'voided') ? `<button class="btn btn-sm btn-danger" onclick="revertSandboxRecord(${id}, ${r.id}, '${r.name}')">撤销</button>` : '-'}</td>
+        </tr>
+      `).join('');
+      if (task.confirmations && task.confirmations.length > 0) {
+        let confHtml = '<h4>操作确认痕迹</h4><table style="width:100%;font-size:12px;"><thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>摘要</th></tr></thead><tbody>';
+        task.confirmations.forEach(c => { confHtml += `<tr><td>${c.performed_at}</td><td>${c.performed_by_name || '-'}</td><td>${c.action}</td><td>${escapeHtml(c.summary || '')}</td></tr>`; });
+        confHtml += '</tbody></table>';
+        document.getElementById('sandboxConfirmations').innerHTML = confHtml;
+      } else {
+        document.getElementById('sandboxConfirmations').innerHTML = '';
+      }
+      document.getElementById('sandboxDetail').style.display = 'block';
+    }
+
+    function closeSandboxDetail() {
+      document.getElementById('sandboxDetail').style.display = 'none';
+    }
+
+    async function revertSandboxRecord(taskId, recordId, name) {
+      const reason = prompt('请输入撤销单条记录的原因');
+      if (!reason) return;
+      if (!confirm(`确认撤销记录 ${name}？`)) return;
+      try {
+        const r = await api.sandbox.revertRecord(taskId, recordId, reason);
+        showAlert(r.message);
+        loadSandboxTaskDetail(taskId);
+        loadSandboxTasks();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function approveSandbox(id) {
+      const remark = prompt('请输入审批备注（可选）') || '';
+      if (!confirm('确认审批通过？')) return;
+      try {
+        const r = await api.admin.approveSandboxTask(id, remark);
+        showAlert(r.message);
+        loadSandboxTasks();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    async function rejectSandbox(id) {
+      const remark = prompt('请输入拒绝原因') || '';
+      if (!remark) return showAlert('请输入拒绝原因', 'error');
+      if (!confirm('确认拒绝？')) return;
+      try {
+        const r = await api.admin.rejectSandboxTask(id, remark);
+        showAlert(r.message);
+        loadSandboxTasks();
+      } catch (e) { showAlert(e.message, 'error'); }
+    }
+
+    document.querySelectorAll('.tab').forEach(tab => {
+      if (tab.dataset.tab === 'sandbox') {
+        tab.addEventListener('click', () => { loadSandboxTasks(); });
+      }
+    });
 
     loadDepartments();
     loadDeptSelects();

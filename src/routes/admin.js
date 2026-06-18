@@ -3,6 +3,10 @@ const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { logAudit } = require('../utils/audit');
 const { precheckBatch, confirmBatch, revokeBatch, generateBatchCSV } = require('../utils/batchImport');
+const {
+  listSandboxTasks, getSandboxTaskDetail, approveSandboxTask,
+  rejectSandboxTask, generateSandboxReportCSV
+} = require('../utils/sandboxImport');
 
 const router = express.Router();
 
@@ -409,6 +413,43 @@ router.post('/batches/:id/revoke', (req, res) => {
   }
   
   res.json(result);
+});
+
+router.get('/sandbox/tasks', (req, res) => {
+  const result = listSandboxTasks(req.query, req.user.id, req.user.role);
+  if (!result.success) return res.status(400).json(result);
+  res.json(result);
+});
+
+router.get('/sandbox/tasks/:id', (req, res) => {
+  const result = getSandboxTaskDetail(parseInt(req.params.id), req.user.id, req.user.role);
+  if (!result.success) {
+    if (result.error === '沙箱任务不存在') return res.status(404).json(result);
+    return res.status(400).json(result);
+  }
+  res.json(result.task);
+});
+
+router.post('/sandbox/tasks/:id/approve', (req, res) => {
+  const { remark } = req.body;
+  const result = approveSandboxTask(parseInt(req.params.id), req.user.id, req.ip, remark);
+  if (!result.success) return res.status(400).json(result);
+  res.json(result);
+});
+
+router.post('/sandbox/tasks/:id/reject', (req, res) => {
+  const { remark } = req.body;
+  const result = rejectSandboxTask(parseInt(req.params.id), req.user.id, req.ip, remark);
+  if (!result.success) return res.status(400).json(result);
+  res.json(result);
+});
+
+router.get('/sandbox/tasks/:id/export', (req, res) => {
+  const result = generateSandboxReportCSV(parseInt(req.params.id));
+  if (!result.success) return res.status(400).json(result);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="sandbox-${result.task_no || req.params.id}.csv"`);
+  res.send('\uFEFF' + result.csv);
 });
 
 module.exports = router;

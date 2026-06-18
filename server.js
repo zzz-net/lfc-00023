@@ -10,6 +10,7 @@ const adminRoutes = require('./src/routes/admin');
 const nurseRoutes = require('./src/routes/nurse');
 const doctorRoutes = require('./src/routes/doctor');
 const publicRoutes = require('./src/routes/public');
+const sandboxRoutes = require('./src/routes/sandbox');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,6 +24,7 @@ app.use('/api/admin', authenticateToken, requireRole('admin'), adminRoutes);
 app.use('/api/nurse', authenticateToken, requireRole('nurse'), nurseRoutes);
 app.use('/api/doctor', authenticateToken, requireRole('doctor'), doctorRoutes);
 app.use('/api/public', publicRoutes);
+app.use('/api/sandbox', authenticateToken, requireRole('admin', 'nurse'), sandboxRoutes);
 
 app.get('/api/me', authenticateToken, (req, res) => {
   res.json(req.user);

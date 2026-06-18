@@ -166,6 +166,116 @@ CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action);
 CREATE INDEX IF NOT EXISTS idx_import_batch_date ON import_batches(DATE(imported_at));
 CREATE INDEX IF NOT EXISTS idx_import_record_batch ON import_records(batch_id);
 CREATE INDEX IF NOT EXISTS idx_import_record_status ON import_records(status);
+
+CREATE TABLE IF NOT EXISTS sandbox_tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_no TEXT UNIQUE NOT NULL,
+  task_name TEXT NOT NULL,
+  template_version TEXT NOT NULL DEFAULT 'v1',
+  target_dataset TEXT NOT NULL DEFAULT 'queue_records',
+  scope_type TEXT NOT NULL DEFAULT 'department' CHECK(scope_type IN ('department', 'all', 'custom')),
+  scope_value TEXT,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN (
+    'draft', 'prechecking', 'prechecked', 'practicing', 'practiced',
+    'pending_approval', 'approved', 'rejected', 'submitting',
+    'submitted', 'voided'
+  )),
+  total_count INTEGER NOT NULL DEFAULT 0,
+  new_count INTEGER NOT NULL DEFAULT 0,
+  overwrite_count INTEGER NOT NULL DEFAULT 0,
+  skip_count INTEGER NOT NULL DEFAULT 0,
+  fail_count INTEGER NOT NULL DEFAULT 0,
+  csv_text TEXT,
+  created_by INTEGER NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_by INTEGER,
+  updated_at DATETIME,
+  submitted_by INTEGER,
+  submitted_at DATETIME,
+  approved_by INTEGER,
+  approved_at DATETIME,
+  approval_remark TEXT,
+  voided_by INTEGER,
+  voided_at DATETIME,
+  void_reason TEXT,
+  FOREIGN KEY (created_by) REFERENCES users(id),
+  FOREIGN KEY (submitted_by) REFERENCES users(id),
+  FOREIGN KEY (approved_by) REFERENCES users(id),
+  FOREIGN KEY (voided_by) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS sandbox_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL,
+  row_index INTEGER NOT NULL,
+  id_card TEXT NOT NULL,
+  name TEXT NOT NULL,
+  phone TEXT,
+  gender TEXT,
+  age INTEGER,
+  department_id INTEGER,
+  department_name TEXT,
+  queue_date TEXT NOT NULL,
+  type TEXT NOT NULL,
+  sandbox_status TEXT NOT NULL DEFAULT 'pending' CHECK(sandbox_status IN (
+    'pending', 'validated', 'conflict', 'skipped', 'reverted', 'failed',
+    'practice_success', 'practice_overwrite', 'submitted', 'voided'
+  )),
+  conflict_type TEXT,
+  conflict_detail TEXT,
+  action_type TEXT CHECK(action_type IN ('new', 'overwrite', 'skip')),
+  error_code TEXT,
+  error_message TEXT,
+  practice_result_id INTEGER,
+  practice_queue_number INTEGER,
+  practice_patient_id INTEGER,
+  is_reverted INTEGER DEFAULT 0,
+  reverted_by INTEGER,
+  reverted_at DATETIME,
+  revert_reason TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME,
+  FOREIGN KEY (task_id) REFERENCES sandbox_tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (reverted_by) REFERENCES users(id),
+  UNIQUE(task_id, row_index)
+);
+
+CREATE TABLE IF NOT EXISTS sandbox_confirmations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL,
+  record_id INTEGER,
+  action TEXT NOT NULL CHECK(action IN (
+    'precheck', 'practice', 'revert_record', 'void_task', 'resubmit',
+    'submit', 'approve', 'reject', 'reimport'
+  )),
+  details TEXT,
+  summary TEXT,
+  performed_by INTEGER NOT NULL,
+  performed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  ip_address TEXT,
+  FOREIGN KEY (task_id) REFERENCES sandbox_tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (record_id) REFERENCES sandbox_records(id) ON DELETE CASCADE,
+  FOREIGN KEY (performed_by) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS sandbox_field_mappings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL,
+  source_field TEXT NOT NULL,
+  target_field TEXT NOT NULL,
+  is_required INTEGER DEFAULT 0,
+  transform_rule TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (task_id) REFERENCES sandbox_tasks(id) ON DELETE CASCADE,
+  UNIQUE(task_id, source_field)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sandbox_task_status ON sandbox_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_sandbox_task_created ON sandbox_tasks(created_at);
+CREATE INDEX IF NOT EXISTS idx_sandbox_record_task ON sandbox_records(task_id);
+CREATE INDEX IF NOT EXISTS idx_sandbox_record_status ON sandbox_records(sandbox_status);
+CREATE INDEX IF NOT EXISTS idx_sandbox_confirmation_task ON sandbox_confirmations(task_id);
+CREATE INDEX IF NOT EXISTS idx_sandbox_mapping_task ON sandbox_field_mappings(task_id);
 `;
 
 db.exec(initSql);

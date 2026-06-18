@@ -82,6 +82,30 @@ const api = {
       return res.text();
     },
     revokeBatch: (id, reason) => request(`/admin/batches/${id}/revoke`, { method: 'POST', body: JSON.stringify({ reason }) }),
+    getSandboxTasks: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return request(`/admin/sandbox/tasks${qs ? `?${qs}` : ''}`);
+    },
+    getSandboxTaskDetail: (id) => request(`/admin/sandbox/tasks/${id}`),
+    approveSandboxTask: (id, remark) => request(`/admin/sandbox/tasks/${id}/approve`, { method: 'POST', body: JSON.stringify({ remark }) }),
+    rejectSandboxTask: (id, remark) => request(`/admin/sandbox/tasks/${id}/reject`, { method: 'POST', body: JSON.stringify({ remark }) }),
+    exportSandboxTaskCSV: (id) => `/api/admin/sandbox/tasks/${id}/export`,
+  },
+
+  sandbox: {
+    createTask: (data) => request('/sandbox/tasks', { method: 'POST', body: JSON.stringify(data) }),
+    getTasks: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return request(`/sandbox/tasks${qs ? `?${qs}` : ''}`);
+    },
+    getTaskDetail: (id) => request(`/sandbox/tasks/${id}`),
+    precheckTask: (id, csvText) => request(`/sandbox/tasks/${id}/precheck`, { method: 'POST', body: JSON.stringify({ csv_text: csvText }) }),
+    practiceTask: (id) => request(`/sandbox/tasks/${id}/practice`, { method: 'POST' }),
+    revertRecord: (taskId, recordId, reason) => request(`/sandbox/tasks/${taskId}/records/${recordId}/revert`, { method: 'POST', body: JSON.stringify({ reason }) }),
+    voidTask: (id, reason) => request(`/sandbox/tasks/${id}/void`, { method: 'POST', body: JSON.stringify({ reason }) }),
+    reimportTask: (id) => request(`/sandbox/tasks/${id}/reimport`, { method: 'POST' }),
+    submitTask: (id) => request(`/sandbox/tasks/${id}/submit`, { method: 'POST' }),
+    exportTaskCSV: (id) => `/api/sandbox/tasks/${id}/export`,
   },
 
   nurse: {
